@@ -16,7 +16,7 @@ jobs:
       R_KEEP_PKG_SOURCE: yes
     steps:
       - name: Installing texi2dvi for pdf creation
-        run: apt-get install texinfo
+        run: sudo apt-get install -y texinfo
 
       - uses: actions/checkout@v3
 
