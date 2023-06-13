@@ -1,4 +1,4 @@
-[![Python package](https://github.com/crhisto/DecoFlex/actions/workflows/python-app.yml/badge.svg)](https://github.com/crhisto/NMMFlex/actions/workflows/python-app.yml)
+[![R-CMD-check](https://github.com/crhisto/DecoFlex/actions/workflows/r_check.yaml/badge.svg)](https://github.com/crhisto/DecoFlex/actions/workflows/r_check.yaml)
 
 <!-- Diagram with NMMFlex -->
 <br />
