@@ -19,7 +19,7 @@ BuildType: Package
 PackageUseDevtools: Yes
 PackageInstallArgs: --no-multiarch --with-keep.source
 PackageBuildArgs: --no-build-vignettes --no-manual
-PackageCheckArgs: --ignore-vignettes
+PackageCheckArgs: --ignore-vignettes --as-cran
 PackageRoxygenize: rd,collate,namespace,vignette
 
 SpellingDictionary: en_US
