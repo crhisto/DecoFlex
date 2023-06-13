@@ -1,0 +1,21 @@
+title: DecoFlex
+url: https://crhisto.github.io/DecoFlex/
+template:
+  params:
+    bootswatch: flatly
+
+navbar:
+  type: inverse
+  left:
+    - icon: fa-home
+      href: index.html
+    - text: "References"
+      href: reference/index.html
+
+  right:
+    - icon: fa-file-code-o
+      text: "functions"
+      href: reference/index.html
+    - icon: fa-github fa-lg
+      text: "github"
+      href: https://github.com/crhisto/DecoFlex

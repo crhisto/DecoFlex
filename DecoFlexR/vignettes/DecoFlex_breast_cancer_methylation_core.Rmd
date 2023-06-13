@@ -1,0 +1,1283 @@
+---
+title: "DecoFlex vignettes examples in Breast Cancer Data with a methylation core setup"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{DecoFlex_breast_cancer_methylation_core}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+# Configuration for the models execution. Min: 3
+iterations_big_models <- 2 # Target 3000
+iterations_small_models <- 2 # Target: 300
+
+```
+
+**Computational Epigenomics Research group:** [epi-logos.com](https://epi-logos.com/)
+
+# Context
+
+`DecoFlex` has been designed and developed as a comprehensive tool for performing intricate analyses on various datasets. The vignettes examples provided below showcase some of the salient applications where `DecoFlex` has been successfully employed for deconvolution:
+
+1. **Breast Cancer Data - Deconvolution of Methylation Core with Expression Data**: This case study provides a glimpse of how `DecoFlex` can navigate through complex breast cancer data, conducting a methylation core deconvolution with associated expression data. 
+
+2. **Thymus Cancer Case - T-cell–specific Lymphoma Analysis with Expression Core Deconvolution and Methylation**: Here, `DecoFlex` is employed to examine a dataset centered on T-cell–specific lymphoma in the thymus. The analysis explores a unique combination of expression core deconvolution and methylation analysis.
+
+These examples serve as an excellent primer to comprehend the capabilities of `DecoFlex` in handling complex omics data analyses. They could also act as a template for conducting your own unique analyses with your datasets. For any queries, feedback, or suggestions, please feel free to reach out to us.
+
+For those interested in gaining a deeper understanding of the technical and methodological underpinnings of the DecoFlex approach, we recommend reading our comprehensive research paper:
+
+- Cardona, C., Schweikert, G., et al. (2023). "DecoFlex: A Flexible Joined Cell-Type Decomposition with Multiomic Epigenetic Data." Published on bioRxiv. You can access the paper directly via this [link](https://doi.org/10.1101/xxxxxx).
+
+This paper delves into the nuanced workings of DecoFlex and provides a comprehensive exploration of the algorithm's design and performance. It also highlights its application in diverse use-cases, emphasizing its flexibility and adaptability in dealing with multiomic epigenetic data.
+
+# Introduction (vignette #1)
+
+This vignette centers on the development and application of the DecoFlex R package, inspired by and tested against the Breast Cancer dataset from [Onuchic V, et al, 2016](10.1016/j.celrep.2016.10.057). The dataset is comprised of 300 in silico mixtures, with 100 normal and 200 cancer simulations, featuring diverse cell types' methylation and gene expression profiles. (For a more detailed understanding, please refer to the original paper).
+
+Our initial analyses incorporated the Edec reference methylation profiles, which correspond to the same cell class as the mixed samples, albeit from different cell types (e.g., various breast cancer cell lines). We initially emulated the authors' approach, an endeavor that can be followed here: https://github.com/BRL-BCM/EDec/blob/master/vignettes/EDec_usage_example.Rmd. Our goal was to accurately recover the methylation and expression matrices, along with the proportions of three specific cell types: Stromal, Epithelial, and Immune, in both cancerous and normal cells.
+
+Subsequently, we explored how DecoFlex could correctly identify all six cell type proportions, in conjunction with their respective methylation and gene expression profiles. Finally, we utilized DecoFlex's extended functionality to investigate the relationship between methylation and expression data, implementing a third, Z matrix that generates a B output matrix.
+
+This tutorial will cover the following content:
+
+1. Installation and Setup
+2. Data Acquisition
+3. Simple Deconvolution
+4. Separate Deconvolutions: Cancer and Normal
+5. Recovering Proportions of Six Cell Types (Cancer, Normal)
+6. Deconvolution with Auxiliary Matrices (Z input, B output)
+
+# 1. Installation and setup
+
+Firstly, to utilize sparse matrices in R, we need to install two modified libraries: [Biobase](https://github.com/Bioconductor/Biobase) and [xbioc](https://github.com/renozao/xbioc). Subsequently, we will be incorporating an enhanced version of the [SCDC](https://meichendong.github.io/SCDC/articles/SCDC.html) library, which has undergone revisions to support sparse matrices, facilitate parallel processing, enable dynamic threshold for marker selection, among other advancements. Lastly, the necessary general libraries required for the entire pipeline execution will be imported.
+```{r importing_libraries, include=FALSE}
+source("scripts/util_custom.R", local = knitr::knit_global())
+
+if (!require("devtools")) {
+  install.packages("devtools")
+}
+
+#Check Biobase modified installation
+if("Biobase" %in% rownames(installed.packages())){
+  library(Biobase)
+}else{
+  devtools::install_github( repo = "crhisto/Biobase" )
+  library(Biobase)
+}
+
+#Check xbioc modified installation
+if("xbioc" %in% rownames(installed.packages())){
+  library(xbioc)
+}else{
+  devtools::install_github( repo = "crhisto/xbioc" )
+  library(xbioc)
+}
+
+if("FDb.InfiniumMethylation.hg19" %in% rownames(installed.packages())){
+  library(FDb.InfiniumMethylation.hg19)
+}else{
+  BiocManager::install("FDb.InfiniumMethylation.hg19")
+  library(FDb.InfiniumMethylation.hg19)
+}
+
+if("dendextend" %in% rownames(installed.packages())){
+  library(dendextend)
+}else{
+  install.packages('dendextend')
+  library(dendextend)
+}
+
+
+#Other libraries.
+library(EDec)
+library(ggplot2)
+library(RColorBrewer)
+library(dplyr)
+library(pheatmap)
+library(reticulate)
+library(gplots)
+library(FDb.InfiniumMethylation.hg19)
+library(dplyr)
+library(tidyverse)
+library(dendextend)
+```
+
+
+Importing the library
+```{r setup_decoflex}
+library(DecoFlex)
+```
+
+# 2. Data adquisition
+
+First let's load the Edec datasets from the github repository
+```{bash downloading_data, eval=FALSE, include=FALSE}
+mkdir data
+cd data
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/reference_meth.rda
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/reference_meth_class.rda
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/meth_mixtures.rda
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/gene_exp_mixtures.rda
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/true_cell_type_meth.rda
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/true_cell_type_props.rda
+wget https://github.com/BRL-BCM/EDecExampleData/raw/master/data/true_cell_type_gene_exp.rda
+```
+
+We will now proceed to load the datasets that will be utilized.
+```{r loading_edec_datasets}
+load(file='data/reference_meth.rda')
+load(file='data/reference_meth_class.rda')
+load(file='data/meth_mixtures.rda')
+load(file='data/gene_exp_mixtures.rda')
+load(file='data/true_cell_type_meth.rda')
+load(file='data/true_cell_type_props.rda')
+load(file='data/true_cell_type_gene_exp.rda')
+```
+
+# 3. Feature selection
+
+We utilized Edec's Stage 0 to select the top 500 CpG loci, crucial in defining cell type identity from the methylation references, using the one vs rest strategy. We believe this is a classic, straightforward, and proven method for identifying features that may characterize the samples. In addition, the authors demonstrated that employing this strategy led to superior results, particularly in terms of identifying the subset of CpG loci.
+```{r selecting.loci.CpG.t.test}
+# Selecting marker loci based on comparisons of each class of reference against
+# all other samples
+markers_ovr <- EDec::run_edec_stage_0(reference_meth = reference_meth,
+                         reference_classes = reference_meth_class,
+                         max_p_value = 1e-5,
+                         num_markers = 500,
+                         version = "one.vs.rest")
+```
+
+# 4. Simple deconvolution
+
+Let's begin by executing a straightforward deconvolution with both delta and alpha set to zero, a procedure equivalent to Normal NMF. We'll use the methylation mixture, previously filtered for the top 500 CpGs, as our input. The aim is to identify four cell types or methylomes that align with the public methylation reference. Similar to Edec, we're aware that the actual cell type composition is six, but the most representative grouping is seen within four clusters.
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero}
+#delta_threshold
+format(1e-20, scientific = FALSE)
+
+start_time <- Sys.time()
+
+# For the reticulate library I have to specify the parameter type.
+deco.alpha.beta.zero.results <- run_complete_deconvolution(
+  x_matrix = data.frame(meth_mixtures[markers_ovr,]),
+  y_matrix = NULL,
+  z_matrix = NULL,
+  k = 4,
+  alpha = 0, 
+  beta = 0,
+  delta_threshold=1e-20, 
+  max_iterations=iterations_big_models)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+Now, let's assess the outcomes of the deconvolution:
+
+1. We will examine the progression of the divergence value until the end of the executions, both in their normal and scaled forms.
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero.performance, warning=FALSE, fig.width=5, fig.height=3}
+
+plot_deconvolution_performance_x_y_z_total(
+  deco.alpha.beta.zero.results$running_info,
+  alpha=0,
+  beta = 0,
+  scale_parameters = FALSE)
+
+plot_deconvolution_performance_x_y_z_total(
+  deco.alpha.beta.zero.results$running_info,
+  alpha=0,
+  beta = 0,
+  scale_parameters = TRUE)
+```
+
+
+2. We will analyze heatmaps that depict the correlation between the Matrix W (calculated methylation profiles) and the public methylation reference, in addition to the true methylation profiles.
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero.results, fig.width=7, fig.height=6}
+
+plot_heatmap_correlation_deconvolution_vs_true_Edec(
+  reference_meth,
+  reference_meth_class, 
+  deco.alpha.beta.zero.results$w, 
+  markers_ovr)
+
+plot_Edec.estimated.profiles.vs.truly.mixtures(
+  true_cell_type_meth,
+  deco.alpha.beta.zero.results$w,
+  markers_ovr)
+```
+
+To assess the proportions accurately, we combine the cancer and normal tissues for comparison.
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero.results.proportions.comparison, fig.width=7, fig.height=7}
+par(mfrow=c(2,2))
+
+plot(t(deco.alpha.beta.zero.results$h)[,"rank_2"],
+     true_cell_type_props[,"CancerEpithelium"],col="steelblue",
+     xlab = "Estimated cancer epithelial proportion",
+     ylab = "True cancer epithelial proportion")
+abline(0,1)
+
+plot(t(deco.alpha.beta.zero.results$h)[,"rank_0"],
+     true_cell_type_props[,"NormalEpithelium"],col="steelblue",
+     xlab = "Estimated normal epithelial proportion",
+     ylab = "True normal epithelial proportion")
+abline(0,1)
+
+plot(t(deco.alpha.beta.zero.results$h)[,"rank_1"],
+     rowSums(true_cell_type_props[,c("CancerImmune","NormalImmune")]),
+     col="steelblue",
+     xlab = "Estimated immune proportion",
+     ylab = "True immune proportion")
+abline(0,1)
+
+plot(t(deco.alpha.beta.zero.results$h)[,"rank_3"],
+     rowSums(true_cell_type_props[,c("CancerStroma","NormalStroma")]),
+     col="steelblue",
+     xlab = "Estimated stromal proportion",
+     ylab = "True stromal proportion")
+abline(0,1)
+```
+
+Considering that the proportions of Epithelium appear satisfactory, but Stroma and Immune proportions do not, we will now combine the normal and cancer samples for these two categories. Afterward, we will reevaluate the correlation.
+```{r decoflex.join.proportions, fig.width=7, fig.height=6}
+
+true.proportions <- cbind(true_cell_type_props[,c("CancerEpithelium", "NormalEpithelium")],
+                          Stromal = rowSums(true_cell_type_props[,c("CancerStroma","NormalStroma")]),
+                          Immune = rowSums(true_cell_type_props[,c("CancerImmune","NormalImmune")]))
+
+#checking proportions: 300
+sum(rowSums(true.proportions))
+
+#checking the correlation
+cors.decoflex.vs.true.proportions <- cor(true.proportions, t(deco.alpha.beta.zero.results$h))
+
+#mean r pearson correlation = 0.9921054
+mean(cors.decoflex.vs.true.proportions[cors.decoflex.vs.true.proportions>=.985])
+
+# Create a color gradient to be used in a heatmap of correlations
+color_gradient <- colorRampPalette(c("white","steelblue"))
+
+par(cex.main=0.6)
+gplots::heatmap.2(cors.decoflex.vs.true.proportions,
+                  cellnote = round(cors.decoflex.vs.true.proportions, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(10,12), 
+                  cexRow =1, cexCol = 1, 
+                  main = "Correlation: true proportions vs deconflex calculation")
+```
+
+Next, we will merge the proportions obtained from both cancer and normal samples in the decoflex results.
+```{r decoflex.combined.proportions}
+# Combine proportions of cancer and normal epithelial cell types
+decoflex.combined_proportions = cbind(rowSums(t(deco.alpha.beta.zero.results$h)[,c("rank_0","rank_2")]),
+                             t(deco.alpha.beta.zero.results$h)[,"rank_3"],
+                             t(deco.alpha.beta.zero.results$h)[,"rank_1"])
+colnames(decoflex.combined_proportions) = c("Epithelial",
+                                   "Stromal",
+                                   "Immune")
+
+#Checking if the proportions by sample and in total are 300
+sum(rowSums(decoflex.combined_proportions))
+```
+
+# 5. Separated deconvolutions: Cancer and normal
+
+Following this, we will proceed to replicate the model by separating the deconvolutions into two categories: cancer and normal cells. By fixing H, which represents the proportions of the three cell types (Epithelial, Stromal, and Immune) in cancer distinct from normal cells, we can compare its similarity to the authentic expression profile. Simultaneously, we will generate distinct methylation profiles for cancer and normal tissue. Subsequent comparison of these profiles will allow us to discern their differences. As the three cell types are combined, k is set to 3, and a comprehensive examination will be conducted for normal cells, encompassing w (the calculated methylation profiles) and a (the calculated expression profile).
+
+## 5.1. Cancer samples
+
+```{r decoflex.gridsearch.tumors}
+
+# #Let's try the deconvolution method library
+# NMMFlex <- import('NMMFlex')
+# NMMFlex_grid_search <- NMMFlex$grid_search()
+
+alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 0.5, 1, 10, 50, 100)
+
+start_time <- Sys.time()
+
+# Running the deconvolution
+grid_search_deco.fixed.w.alpha.list.beta_zero.tumors <- run_grid_search(
+  bulk_data_methylation = data.frame(meth_mixtures[markers_ovr, 1:200]),
+  bulk_data_expression = data.frame(gene_exp_mixtures[, 1:200]),
+  data_expression_auxiliary = NULL,
+  k = 3,
+  alpha_list = alpha_values.list, 
+  beta_list = NULL,
+  max_iterations = iterations_small_models,
+  threads = 0,
+  proportion_constraint_h = TRUE, 
+  fixed_h = data.frame(t(decoflex.combined_proportions)[, 1:200]))
+
+# Time difference of  mins hours: 3.16 hours for 300 iterations: 5:20pm. Actual 2.30 hours
+end_time <- Sys.time()
+end_time - start_time
+```
+
+To select the optimal model, we based our decision on the alpha value, as the beta value remains consistently zero.
+```{r decoflex.gridsearch.tumors.checking.h.matrix, include=FALSE}
+#checking the H matrix and the one that I fixed. Ok.
+choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta_zero.tumors,
+  beta=0, alpha = 0.001)$h == t(decoflex.combined_proportions)[,1:200]
+```
+
+
+Let's examine the behavior of the grid search process to gain insights into its performance.
+
+```{r decoflex.gridsearch.tumors.plots.performance, fig.width=5, fig.height=3}
+grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df, main_parameter = 'alpha')
+
+```
+
+
+```{r decoflex.gridsearch.tumors.plots, fig.width=6, fig.height=2}
+
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df, fill_value = 'log_delta_divergence_value')
+```
+
+
+Let's now examine the correlation between matrix A (expression profile) and the actual expression profile for cancer cells. The preliminary analysis suggests a strong correlation with the reference expression dataset.
+```{r decoflex.gridsearch.tumors.correlation.expression, fig.width=4, fig.height=10}
+
+model.tumors.nmf <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta_zero.tumors,
+  alpha = 0.00001, beta=0)
+
+# Plot estimated transcription profiles against the true cell 
+# type specific transcription profiles
+par(mfrow=c(3,1))
+plot(model.tumors.nmf$a[,"Epithelial"],
+     true_cell_type_gene_exp[,"CancerEpithelium"],
+     col = "steelblue",
+     xlab = "Estimated epithelial transcription profile in tumors",
+     ylab = "True cancer epithelial transcription profile")
+abline(0,1,lty=2)
+
+plot(model.tumors.nmf$a[,"Stromal"],
+     true_cell_type_gene_exp[,"CancerStroma"],
+     col = "steelblue",
+     xlab = "Estimated stromal transcription profile in tumors",
+     ylab = "True cancer stromal transcription profile")
+abline(0,1,lty=2)
+
+plot(model.tumors.nmf$a[,"Immune"],
+     true_cell_type_gene_exp[,"CancerImmune"],
+     col = "steelblue",
+     xlab = "Estimated immune transcription profile in tumors",
+     ylab = "True cancer immune transcription profile")
+abline(0,1,lty=2)
+```
+
+We observe a strong correlation between matrix A and the cancer expression profiles, with a coefficient of 0.997842, indicating a significant association.
+```{r decoflex.gridsearch.tumors.correlation.expression.all, fig.width=7, fig.height=6}
+#checking the correlation
+cors.expression.cancer <- cor(true_cell_type_gene_exp[, c("CancerEpithelium", "CancerStroma", "CancerImmune")],
+                           model.tumors.nmf$a)
+
+#mean r pearson correlation = 0.997842
+mean(cors.expression.cancer[cors.expression.cancer>=.997])
+
+par(cex.main=0.5)
+gplots::heatmap.2(cors.expression.cancer,
+                  cellnote = round(cors.expression.cancer, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(10,12), 
+                  cexRow =1, cexCol = 1, 
+                  main = "Correlation: true expression profiles vs deconflex calculation (Cancer)")
+```
+
+Then, let's examine the methylation profile specifically related to cancer.
+```{r decoflex.gridsearch.tumors.correlation.methylation, fig.width=4, fig.height=10}
+
+par(mfrow=c(3,1))
+plot(model.tumors.nmf$w[,"Epithelial"],
+     true_cell_type_meth[markers_ovr,"CancerEpithelium"],col="steelblue",
+     xlab = "Estimated cancer epithelial",
+     ylab = "True cancer epithelial")
+abline(0,1)
+
+plot(model.tumors.nmf$w[,"Stromal"],
+     true_cell_type_meth[markers_ovr,"CancerStroma"],col="steelblue",
+     xlab = "Estimated stroma",
+     ylab = "True cancer stroma")
+abline(0,1)
+
+plot(model.tumors.nmf$w[,"Immune"],
+     true_cell_type_meth[markers_ovr,"CancerImmune"],col="steelblue",
+     xlab = "Estimated immune",
+     ylab = "True cancer immune")
+abline(0,1)
+```
+
+Furthermore, we find a notable correlation of 0.9827916 between the methylation profile and the cancer-related data, indicating a strong relationship between the two.
+```{r decoflex.gridsearch.tumors.correlation.methylation.all, fig.width=7, fig.height=6}
+#checking the correlation
+cors.methylation.cancer = cor(true_cell_type_meth[markers_ovr, c("CancerEpithelium", "CancerStroma", "CancerImmune")], model.tumors.nmf$w[markers_ovr,])
+
+#mean r pearson correlation = 0.9827916
+mean(cors.methylation.cancer[cors.methylation.cancer>=.965])
+
+par(cex.main=0.5)
+gplots::heatmap.2(cors.methylation.cancer,
+                  cellnote = round(cors.methylation.cancer, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(10,12), 
+                  cexRow =1, cexCol = 1, 
+                  main = "Correlation: true methylation profiles vs deconflex calculation (Cancer)")
+```
+
+## 5.2. Normal samples
+
+Now, we will repeat the same process with the normal samples from the in silico mixtures.
+```{r decoflex.gridsearch.normal}
+
+alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 0.5, 1, 10, 50, 100)
+
+start_time <- Sys.time()
+
+grid_search_deco.fixed.w.alpha.list.beta_zero.normal <- run_grid_search(
+  bulk_data_methylation = data.frame(meth_mixtures[markers_ovr, 201:300]),
+  bulk_data_expression = data.frame(gene_exp_mixtures[, 201:300]),
+  data_expression_auxiliary = NULL,
+  k = 3,
+  alpha_list = alpha_values.list, 
+  beta_list = NULL,
+  max_iterations = iterations_small_models,
+  threads = 0,
+  proportion_constraint_h = TRUE, 
+  fixed_h = data.frame(t(decoflex.combined_proportions)[, 201:300]))
+
+# Time difference of  mins hours: 1.66 hours for 300 iterations: 6:40pm. Real: 1.20 hours
+#Final number of iterations:  300  Divergence:  1874591464.911863  Delta divergence:  3855.57200050354
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+Let's examine the behavior of the grid search algorithm to gain insights into its performance.
+
+```{r decoflex.gridsearch.normal.plots.performance, fig.width=5, fig.height=3}
+grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.normal)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, main_parameter = 'alpha')
+```
+
+```{r decoflex.gridsearch.normal.plots, fig.width=6, fig.height=2}
+
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, fill_value = 'log_delta_divergence_value')
+```
+
+
+Now, let's assess the correlation between the matrix A (expression profile) and the actual expression profile for normal cells. The results indicate a strong correlation, suggesting a close alignment between the two.
+```{r decoflex.gridsearch.normal.correlation.expression, fig.width=4, fig.height=10}
+model.normal.nmf <- choose_model_from_grid_search_object(grid_search_deco.fixed.w.alpha.list.beta_zero.normal, alpha = 0.00001, beta=0)
+
+# Plot estimated transcription profiles against the true cell 
+# type specific transcription profiles
+par(mfrow=c(3,1))
+
+plot(model.normal.nmf$a[,"Epithelial"],
+     true_cell_type_gene_exp[,"NormalEpithelium"],
+     col = "steelblue",
+     xlab = "Estimated epithelial transcription profile in normal samples",
+     ylab = "True normal epithelial transcription profile")
+abline(0,1,lty=2)
+
+plot(model.normal.nmf$a[,"Stromal"],
+     true_cell_type_gene_exp[,"NormalStroma"],
+     col = "steelblue",
+     xlab = "Estimated stromal transcription profile in normal samples",
+     ylab = "True normal stroma transcription profile")
+abline(0,1,lty=2)
+
+plot(model.normal.nmf$a[,"Immune"],
+     true_cell_type_gene_exp[,"NormalImmune"],
+     col = "steelblue",
+     xlab = "Estimated immune transcription profile in normal samples",
+     ylab = "True normal immune transcription profile")
+abline(0,1,lty=2)
+
+```
+
+The correlation between the matrix A (expression profile) and the actual expression profile for normal cells is excellent, with a coefficient of 0.9905838, indicating a high level of agreement.
+```{r decoflex.gridsearch.normal.correlation.expression.all, fig.width=7, fig.height=6}
+#checking the correlation
+cors.expression.normal = cor(true_cell_type_gene_exp[, c("NormalEpithelium", "NormalStroma", "NormalImmune")],
+                           model.normal.nmf$a)
+
+#mean r pearson correlation = 0.9905838 
+mean(cors.expression.normal[cors.expression.normal>=.98])
+
+par(cex.main=0.5)
+gplots::heatmap.2(cors.expression.normal,
+                  cellnote = round(cors.expression.normal, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(10,12), 
+                  cexRow =1, cexCol = 1,
+                  main = "Correlation: true expression profiles vs deconflex calculation (Normal)")
+```
+
+
+Next, let's examine the methylation profile specifically related to normal cells.
+```{r decoflex.gridsearch.normal.correlation.methylation, fig.width=4, fig.height=10}
+
+par(mfrow=c(3,1))
+
+plot(model.normal.nmf$w[,"Epithelial"],
+     true_cell_type_meth[markers_ovr,"NormalEpithelium"],col="steelblue",
+     xlab = "Estimated normal epithelial",
+     ylab = "True normal epithelial")
+abline(0,1)
+
+plot(model.normal.nmf$w[,"Stromal"],
+     true_cell_type_meth[markers_ovr,"NormalStroma"],col="steelblue",
+     xlab = "Estimated stroma",
+     ylab = "True normal stroma")
+abline(0,1)
+
+plot(model.normal.nmf$w[,"Immune"],
+     true_cell_type_meth[markers_ovr,"NormalImmune"],col="steelblue",
+     xlab = "Estimated immune",
+     ylab = "True normal immune")
+abline(0,1)
+
+```
+
+We also find a commendable correlation of 0.9824257 between the methylation profile and the normal cell data, indicating a strong relationship between the two.
+```{r decoflex.gridsearch.normal.correlation.methylation.all, fig.width=7, fig.height=6}
+#checking the correlation
+cors.methylation.normal = cor(true_cell_type_meth[markers_ovr, c("NormalEpithelium", "NormalStroma", "NormalImmune")], model.normal.nmf$w[markers_ovr,])
+
+#mean r pearson correlation = 0.9824257
+mean(cors.methylation.normal[cors.methylation.normal>=.975])
+
+par(cex.main=0.5)
+gplots::heatmap.2(cors.methylation.normal,
+                  cellnote = round(cors.methylation.normal, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(10,12), 
+                  cexRow =1, cexCol = 1,
+                  main = "Correlation: true methylation profiles vs deconflex calculation (Normal)")
+```
+
+## 5.3. Complete expression profile
+
+Next, I aim to consolidate a unified dataset and generate a comparison plot using the calculated expression profiles from both cancer and normal samples.
+```{r decoflex.gridsearch.normal.tumor.together, fig.width=7, fig.height=10}
+
+model.tumors.nmf <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta_zero.tumors,
+  alpha = 0.00001, beta=0)
+
+model.normal.nmf <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta_zero.normal,
+  alpha = 0.00001, beta=0)
+
+# Plot estimated transcription profiles against the true cell 
+# type specific transcription profiles
+par(mfrow=c(3,2))
+
+plot(model.tumors.nmf$a[,"Epithelial"],
+     true_cell_type_gene_exp[,"CancerEpithelium"],
+     col = "steelblue",
+     xlab = "Estimated epithelial transcription profile in tumors",
+     ylab = "True cancer epithelial transcription profile")
+abline(0,1,lty=2)
+
+plot(model.normal.nmf$a[,"Epithelial"],
+     true_cell_type_gene_exp[,"NormalEpithelium"],
+     col = "steelblue",
+     xlab = "Estimated epithelial transcription profile in normal samples",
+     ylab = "True normal epithelial transcription profile")
+abline(0,1,lty=2)
+
+
+
+plot(model.tumors.nmf$a[,"Stromal"],
+     true_cell_type_gene_exp[,"CancerStroma"],
+     col = "steelblue",
+     xlab = "Estimated stromal transcription profile in tumors",
+     ylab = "True cancer stromal transcription profile")
+abline(0,1,lty=2)
+
+plot(model.normal.nmf$a[,"Stromal"],
+     true_cell_type_gene_exp[,"NormalStroma"],
+     col = "steelblue",
+     xlab = "Estimated stromal transcription profile in normal samples",
+     ylab = "True normal stroma transcription profile")
+abline(0,1,lty=2)
+
+
+
+plot(model.tumors.nmf$a[,"Immune"],
+     true_cell_type_gene_exp[,"CancerImmune"],
+     col = "steelblue",
+     xlab = "Estimated immune transcription profile in tumors",
+     ylab = "True cancer immune transcription profile")
+abline(0,1,lty=2)
+
+plot(model.normal.nmf$a[,"Immune"],
+     true_cell_type_gene_exp[,"NormalImmune"],
+     col = "steelblue",
+     xlab = "Estimated immune transcription profile in normal samples",
+     ylab = "True normal immune transcription profile")
+abline(0,1,lty=2)
+
+```
+
+The combined expression profile demonstrates a significant correlation of 0.9942129 with the true cell type profile, indicating a strong agreement between the two.
+```{r decoflex.gridsearch.normal.tumor.together.correlation.expression, fig.width=7, fig.height=6}
+
+decoflex.deco.data.expression <- cbind("decoflex.CancerEpithelium"=model.tumors.nmf$a[,"Epithelial"],
+                    "decoflex.NormalEpithelium" = model.normal.nmf$a[,"Epithelial"], 
+                    "decoflex.CancerStromal"=model.tumors.nmf$a[,"Stromal"], 
+                    "decoflex.NormalStromal"=model.normal.nmf$a[,"Stromal"], 
+                    "decoflex.CancerImmune"=model.tumors.nmf$a[,"Immune"], 
+                    "decoflex.NormalImmune"=model.normal.nmf$a[,"Immune"])
+
+#checking the correlation
+cors.expression.tumor.normal = cor(true_cell_type_gene_exp, decoflex.deco.data.expression)
+#mean r pearson correlation = 0.9942129
+mean(cors.expression.tumor.normal[cors.expression.tumor.normal>.90])
+
+par(cex.main=0.5)
+gplots::heatmap.2(cors.expression.tumor.normal,
+                  cellnote = round(cors.expression.tumor.normal, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(13,12), 
+                  cexRow =1, cexCol = 1,
+                  main = "Correlation: true expresion profiles vs deconflex calculation (cancer, Normal)")
+```
+
+## 5.4. Complete expression profile
+
+Let's proceed by combining the methylation profiles of both cancer and normal samples for further analysis.
+```{r decoflex.gridsearch.normal.tumor.together.correlation.methylation, fig.width=7, fig.height=10}
+
+par(mfrow=c(3,2))
+
+plot(model.tumors.nmf$w[,"Epithelial"],
+     true_cell_type_meth[markers_ovr,"CancerEpithelium"],col="steelblue",
+     xlab = "Estimated cancer epithelial",
+     ylab = "True cancer epithelial")
+abline(0,1)
+
+plot(model.normal.nmf$w[,"Epithelial"],
+     true_cell_type_meth[markers_ovr,"NormalEpithelium"],col="steelblue",
+     xlab = "Estimated normal epithelial",
+     ylab = "True normal epithelial")
+abline(0,1)
+
+
+
+plot(model.tumors.nmf$w[,"Stromal"],
+     true_cell_type_meth[markers_ovr,"CancerStroma"],col="steelblue",
+     xlab = "Estimated stroma",
+     ylab = "True cancer stroma")
+abline(0,1)
+
+plot(model.normal.nmf$w[,"Stromal"],
+     true_cell_type_meth[markers_ovr,"NormalStroma"],col="steelblue",
+     xlab = "Estimated stroma",
+     ylab = "True normal stroma")
+abline(0,1)
+
+
+
+plot(model.tumors.nmf$w[,"Immune"],
+     true_cell_type_meth[markers_ovr,"CancerImmune"],col="steelblue",
+     xlab = "Estimated immune",
+     ylab = "True cancer immune")
+abline(0,1)
+
+plot(model.normal.nmf$w[,"Immune"],
+     true_cell_type_meth[markers_ovr,"NormalImmune"],col="steelblue",
+     xlab = "Estimated immune",
+     ylab = "True normal immune")
+abline(0,1)
+
+```
+
+Upon combining the methylation profiles of cancer and normal samples, we find that the joint expression profile exhibits a remarkable correlation of 0.9826087 with the true cell type profile, indicating a strong agreement between the two.
+```{r decoflex.gridsearch.normal.tumor.together.all, fig.width=7, fig.height=6}
+
+decoflex.deco.data.methylation <- cbind("decoflex.CancerEpithelium"=model.tumors.nmf$w[,"Epithelial"],
+                    "decoflex.NormalEpithelium" = model.normal.nmf$w[,"Epithelial"], 
+                    "decoflex.CancerStromal"=model.tumors.nmf$w[,"Stromal"], 
+                    "decoflex.NormalStromal"=model.normal.nmf$w[,"Stromal"], 
+                    "decoflex.CancerImmune"=model.tumors.nmf$w[,"Immune"], 
+                    "decoflex.NormalImmune"=model.normal.nmf$w[,"Immune"])
+
+#checking the correlation
+cors.methylation.tumor.normal = cor(true_cell_type_meth[markers_ovr, ], decoflex.deco.data.methylation)
+#mean r pearson correlation = 0.9826087
+mean(cors.methylation.tumor.normal[cors.methylation.tumor.normal>.965])
+
+par(cex.main=0.5)
+gplots::heatmap.2(cors.methylation.tumor.normal,
+                  cellnote = round(cors.methylation.tumor.normal, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(13,12), 
+                  cexRow =1, cexCol = 1,
+                  main = "Correlation: true methylation profiles vs deconflex calculation (cancer, Normal)")
+```
+
+## 5.5. Differences between cancer and normal methylation profiles
+
+Lastly, we aim to investigate the distinguishing factors in the methylation profiles of cancer and normal tissues, which contribute to the divergent methylome between normal and tumor samples, particularly concerning CpGs.
+```{r decoflex.gridsearch.normal.vs.tumor, fig.width=11, fig.height=4}
+
+par(mfrow=c(1,3))
+plot(model.tumors.nmf$w[,"Epithelial"],
+     model.normal.nmf$w[,"Epithelial"],col="steelblue",
+     xlab = "Estimated tumor Epithelium",
+     ylab = "Estimated normal Epithelium")
+abline(0,1)
+
+plot(model.tumors.nmf$w[,"Stromal"],
+     model.normal.nmf$w[,"Stromal"],col="steelblue",
+     xlab = "Estimated tumor Stroma",
+     ylab = "Estimated normal Stroma")
+abline(0,1)
+
+plot(model.tumors.nmf$w[,"Immune"],
+     model.normal.nmf$w[,"Immune"],col="steelblue",
+     xlab = "Estimated tumor immune",
+     ylab = "Estimated normal immune")
+abline(0,1)
+```
+
+
+5. Recovering Proportions of Six Cell Types (Cancer, Normal)
+
+Our next objective is to compute the proportions for all six cell types: normal and cancer, for each pure cell type in a comprehensive model. To achieve this, we amalgamate the results of the W matrix (calculated methylation profiles) and A matrix (calculated expression profile) from the normal and tumor deconvolution models. Our aim is to accurately recover the true proportions of each normal and cancer sample, which was not feasible in the first and second steps, as we only calculated the proportions for the three cell types, treating cancer and normal together.
+```{r decoflex.gridsearch.normal.tumor.single.model}
+
+#Lets build W, A in order to get H.
+W_methylation <- cbind(model.normal.nmf$w, model.tumors.nmf$w)
+colnames(W_methylation) <- c('normalEpithelial', 'normalStromal', 'normalImmune',
+                                      'cancerEpithelial', 'cancerStromal', 'cancerImmune')
+
+A_expression <- cbind(model.normal.nmf$a, model.tumors.nmf$a)
+colnames(A_expression) <- c('normalEpithelial', 'normalStromal', 'normalImmune',
+                                      'cancerEpithelial', 'cancerStromal', 'cancerImmune')
+
+alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
+
+start_time <- Sys.time()
+
+grid_search_deco.fixed.w.a.alpha.list.tumors.normal <- run_grid_search(
+  bulk_data_methylation = data.frame(meth_mixtures[markers_ovr,]),
+  bulk_data_expression = data.frame(gene_exp_mixtures[,]),
+  data_expression_auxiliary = NULL,
+  k = 6,
+  alpha_list = alpha_values.list, 
+  beta_list = NULL,
+  max_iterations = iterations_small_models,
+  threads = 0,
+  proportion_constraint_h = TRUE, 
+  fixed_w = data.frame(W_methylation),
+  fixed_a = data.frame(A_expression))
+
+# Time difference: each iteration: 1.852337 min, 150=4,63 hours, 200=6.17 hours (real 5.52201 hours)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+Let's analyze the performance and behavior of the grid search algorithm.
+```{r decoflex.gridsearch.normal.tumor.single.model.plots.performance, fig.width=5, fig.height=3}
+grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.a.alpha.list.tumors.normal)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, main_parameter = 'alpha')
+```
+
+```{r decoflex.gridsearch.normal.tumor.single.model.plots, fig.width=6, fig.height=2}
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, fill_value = 'log_delta_divergence_value')
+
+#lets choose one model
+model.tumors.normal.w.a.fixed.nmf <- choose_model_from_grid_search_object(grid_search_deco.fixed.w.a.alpha.list.tumors.normal, alpha = 0.00001, beta=0)
+```
+
+To evaluate the proportions effectively, we combine the cancer and normal tissues for analysis.
+```{r decoflex.gridsearch.normal.tumor.single.model.proportions.comparison, fig.width=7, fig.height=10}
+
+par(mfrow=c(3,2))
+
+plot(t(model.tumors.normal.w.a.fixed.nmf$h)[,"cancerEpithelial"],
+     true_cell_type_props[,"CancerEpithelium"],col="steelblue",
+     xlab = "Estimated cancer epithelial proportion",
+     ylab = "True cancer epithelial proportion")
+abline(0,1)
+
+plot(t(model.tumors.normal.w.a.fixed.nmf$h)[,"normalEpithelial"],
+     true_cell_type_props[,"NormalEpithelium"],col="steelblue",
+     xlab = "Estimated normal epithelial proportion",
+     ylab = "True normal epithelial proportion")
+abline(0,1)
+
+
+
+plot(t(model.tumors.normal.w.a.fixed.nmf$h)[,"normalImmune"],
+     true_cell_type_props[,"NormalImmune"],col="steelblue",
+     xlab = "Estimated normal Immune proportion",
+     ylab = "True normal Immune proportion")
+abline(0,1)
+
+plot(t(model.tumors.normal.w.a.fixed.nmf$h)[,"cancerImmune"],
+     true_cell_type_props[,"CancerImmune"],col="steelblue",
+     xlab = "Estimated cancer Immune proportion",
+     ylab = "True cancer Immune proportion")
+abline(0,1)
+
+
+
+plot(t(model.tumors.normal.w.a.fixed.nmf$h)[,"normalStromal"],
+     true_cell_type_props[,"NormalStroma"],col="steelblue",
+     xlab = "Estimated normal Stromal proportion",
+     ylab = "True normal Stromal proportion")
+abline(0,1)
+
+plot(t(model.tumors.normal.w.a.fixed.nmf$h)[,"cancerStromal"],
+     true_cell_type_props[,"CancerStroma"],col="steelblue",
+     xlab = "Estimated cancer Stromal proportion",
+     ylab = "True cancer Stromal proportion")
+abline(0,1)
+```
+
+We have obtained a strong correlation of 0.9972367 between all the proportions and the actual values. Specifically, the correlation for the normal samples is 0.9917114, and for the cancer samples, it is 0.99.
+```{r decoflex.gridsearch.normal.tumor.single.model.proportions.correlation, fig.width=7, fig.height=6}
+#checking proportions: 300
+sum(rowSums(true_cell_type_props))
+
+#checking the correlation
+cors.decoflex.vs.true.proportions.6.celltypes <- cor(true_cell_type_props,
+                                                     t(model.tumors.normal.w.a.fixed.nmf$h))
+
+#mean r pearson correlation = 0.9972367
+mean(cors.decoflex.vs.true.proportions.6.celltypes[cors.decoflex.vs.true.proportions.6.celltypes>=.985])
+
+#NORMAL: mean r pearson correlation = 0.9917114
+cors.decoflex.vs.true.proportions.6.celltypes.normal <- cors.decoflex.vs.true.proportions.6.celltypes[c('NormalEpithelium', 'NormalStroma', 'NormalImmune'), c('normalEpithelial', 'normalStromal', 'normalImmune')]
+mean(cors.decoflex.vs.true.proportions.6.celltypes.normal[cors.decoflex.vs.true.proportions.6.celltypes.normal>=.97])
+
+#TUMOR: mean r pearson correlation = 
+cors.decoflex.vs.true.proportions.6.celltypes.cancer <- cors.decoflex.vs.true.proportions.6.celltypes[c('CancerEpithelium', 'CancerStroma', 'CancerImmune'), c('cancerEpithelial', 'cancerStromal', 'cancerImmune')]
+mean(cors.decoflex.vs.true.proportions.6.celltypes.cancer[cors.decoflex.vs.true.proportions.6.celltypes.cancer>=.97])
+
+par(cex.main=0.6)
+gplots::heatmap.2(cors.decoflex.vs.true.proportions.6.celltypes,
+                  cellnote = round(cors.decoflex.vs.true.proportions.6.celltypes, 3), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(10,12), 
+                  cexRow =1, cexCol = 1, 
+                  main = "Correlation: true proportions vs deconflex calculation")
+```
+
+
+# 7. Deconvolution with Auxiliary matrices Z input, B output
+
+Taking advantage of DecoFlex's flexible configuration, we will now fix W (the calculated methylation patterns), A (the calculated expression patterns), and H (proportions) to generate matrix B. This will be accomplished by leveraging the additional information provided through matrix Z, as described below.
+
+## 7.1. Creating Z matrix
+
+Let's construct the auxiliary matrix corresponding to the Z matrix. During this research phase, we need to develop the following strategies:
+
+1. As each row represents a CpG and each column symbolizes a sample, it's necessary to summarize the expression for each CpG X Sample. The goal is to evaluate the expression value within the vicinity of 100bp after the CpG.
+
+Since our methylation data is sourced from the InfiniumMethylation hg19 platform, it's vital to employ the appropriate method to translate the cg####### (ID_REF) code. This allows us to retrieve the genomic position.
+
+For more information about GenomicRanges, visit: https://bioconductor.org/packages/devel/bioc/vignettes/GenomicRanges/inst/doc/GenomicRangesIntroduction.html
+```{r creation.auxiliary.matrix.expression.methylation.z.data, include=FALSE}
+
+# https://bioconductor.org/packages/release/data/annotation/html/FDb.InfiniumMethylation.hg19.html
+# https://bioconductor.org/packages/release/data/annotation/manuals/FDb.InfiniumMethylation.hg19/man/FDb.InfiniumMethylation.hg19.pdf
+
+# 1. First let's take the 450k methylation reference and ge tthe markers that we use in the deconvolution
+hm450 <- get450k()
+probenames <- c(markers_ovr)
+probes <- hm450[probenames]
+probes.df <- data.frame(ID_REF = names(probes), probes)
+
+#2. Now we get the TSS(transcriptional start site) related with those markers CpGs, meaning that we got the genes in the  neighborhood of the CpG 
+tss.list <- getNearestTSS(probes)
+tss.list.df <- data.frame(ID_REF = rownames(tss.list), tss.list)
+transcript.list <- getNearestTranscript(probes)
+transcript.list.df <- data.frame(ID_REF = rownames(transcript.list), transcript.list)
+
+expression_bulk_samples <- gene_exp_mixtures
+# 3. After I'm going to join the CpG information with the gene name.
+expression.data.filtered <- expression_bulk_samples[rownames(expression_bulk_samples) 
+                                                    %in% transcript.list.df$nearestGeneSymbol, ]
+expression.data.filtered.df <- data.frame(expression.data.filtered)
+expression.data.filtered.df$nearestGeneSymbol <- rownames(expression.data.filtered.df)
+expression.CpGs <- transcript.list.df %>% inner_join(expression.data.filtered.df, by="nearestGeneSymbol")
+
+#4. I found 430 over 500 CpGs. The initial idea will be to create NA values for the marker CpGs that I couldn't find.
+expression.CpGs.missing.values <- probes.df %>% left_join(expression.CpGs, by="ID_REF")
+rownames(expression.CpGs.missing.values) <- expression.CpGs.missing.values$ID_REF
+
+#5. I have the matrix that I will use in the deconvolution with Generalized Kullback Leibler convergence based on mutual information
+expression_bulk_samples.auxiliary <- expression.CpGs.missing.values[markers_ovr, colnames(expression_bulk_samples)]
+expression_bulk_samples.auxiliary[is.na(expression_bulk_samples.auxiliary)] <- 0.000001
+
+#6. Finally I have to scale from 0 to 1
+colMeans(expression_bulk_samples.auxiliary, na.rm = TRUE)
+library("scales")
+expression_bulk_samples.auxiliary.scaled <- apply(expression_bulk_samples.auxiliary, 2, rescale)
+colMeans(expression_bulk_samples.auxiliary.scaled, na.rm = TRUE)
+print(paste0('Rows: ', nrow(expression_bulk_samples.auxiliary.scaled),
+             ', Columns:', ncol(expression_bulk_samples.auxiliary.scaled)))
+
+#7. Let's replace the NAs values with a value almost 0 (1e20), however in the future the library has to be able to use the NA as advantage.
+expression_bulk_samples.auxiliary.scaled[is.na(expression_bulk_samples.auxiliary.scaled)] <- 0.000001
+```
+
+
+We can create an additional auxiliary matrix, Z, by incorporating the division of expression by methylation as a factor or score.
+```{r creation.auxiliary.matrix.expression.methylation.z.data.score, include=FALSE}
+# expression for nearest Gene of the CpG divided between methylation.
+expression_bulk_samples.auxiliary.score <- expression_bulk_samples.auxiliary/gene_exp_mixtures
+
+#Let's see if there are infinite or na values.
+which(is.infinite(as.matrix(expression_bulk_samples.auxiliary.score)))
+which(is.na(as.matrix(expression_bulk_samples.auxiliary.score)))
+```
+
+Additionally, we can create an auxiliary matrix, Z, that summarizes the information by calculating the expression divided by methylation as a factor or score. This calculation will be performed separately for cancer and normal samples to provide a consolidated summary.
+```{r creation.auxiliary.matrix.expression.methylation.z.data.summarizing}
+
+methylation.data <- data.frame(meth_mixtures)
+# expression for nearest Gene of the CpG divided between methylation.
+expression_bulk_samples.auxiliary.summ <- cbind(tumor = rowSums(expression_bulk_samples.auxiliary[1:200]),
+                                                normal = rowSums(expression_bulk_samples.auxiliary[201:300]))
+
+methylation.summ <- cbind(tumor = rowSums(methylation.data[1:200]),
+                                                normal = rowSums(methylation.data[201:300]))
+
+expression_bulk_samples.auxiliary.score.summ.tumor.normal <- expression_bulk_samples.auxiliary.summ/methylation.summ[rownames(expression_bulk_samples.auxiliary.summ),]
+
+#Let's see if there are infinite or na values.
+which(is.infinite(as.matrix(expression_bulk_samples.auxiliary.score.summ.tumor.normal)))
+which(is.na(as.matrix(expression_bulk_samples.auxiliary.score.summ.tumor.normal)))
+```
+
+
+## 7.2. Deconvolution for normal and cancer data together
+
+We will calculate the B matrix using the Z matrix, incorporating the scores for all six cell types (both normal and cancer) for each pure cell type.
+```{r decoflex.gridsearch.normal.tumor.plus.z}
+
+#Lets build W, A in order to get H.
+W_methylation <- cbind(model.normal.nmf$w, model.tumors.nmf$w)
+colnames(W_methylation) <- c('normalEpithelial', 'normalStromal', 'normalImmune',
+                                      'cancerEpithelial', 'cancerStromal', 'cancerImmune')
+
+A_expression <- cbind(model.normal.nmf$a, model.tumors.nmf$a)
+colnames(A_expression) <- c('normalEpithelial', 'normalStromal', 'normalImmune',
+                                      'cancerEpithelial', 'cancerStromal', 'cancerImmune')
+
+#I got the actual proportions fixed for the best
+H_proportions <- model.tumors.normal.w.a.fixed.nmf$h
+
+alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
+beta_values.list <-  c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
+
+start_time <- Sys.time()
+
+grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal <- run_grid_search(
+  bulk_data_methylation = data.frame(meth_mixtures[markers_ovr,]),
+  bulk_data_expression = data.frame(gene_exp_mixtures[,]),
+  data_expression_auxiliary = data.frame(expression_bulk_samples.auxiliary.score[,]),
+  k = 6,
+  alpha_list = alpha_values.list, 
+  beta_list = beta_values.list,
+  max_iterations = as.integer(iterations_small_models),
+  threads = 0,
+  delta_threshold=1e-20,
+  proportion_constraint_h = TRUE, 
+  fixed_w = data.frame(W_methylation),
+  fixed_a = data.frame(A_expression), 
+  fixed_h = data.frame(H_proportions))
+
+# Time difference: each iteration: 24 sec, 150=(24*150)/60/60= 1 hours, 200=(24*200)/60/60 =  1.33 hours (real  hours)
+#Final number of iterations:  200  Divergence:  40600720.00004679  Delta divergence:  1.6056352332234383
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+Let's analyze the behavior and performance of the grid search algorithm.
+```{r decoflex.gridsearch.normal.tumor.plus.z.plots.performance, fig.width=5, fig.height=3}
+
+grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, main_parameter = 'alpha')
+```
+
+```{r decoflex.gridsearch.normal.tumor.plus.z.plots, fig.width=5, fig.height=3}
+
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, fill_value = 'log_delta_divergence_value')
+```
+
+
+## 7.3. Creation of Z matrix for normal separated
+
+I will attempt to extract the normal profiles of the three cell types using the auxiliary matrix for the normal samples.
+```{r decoflex.gridsearch.normal.plus.z}
+
+alpha_values.list <- c(0.0, 0.0001, 0.001, 0.01, 0.1)
+beta_values.list <- c(0.0, 0.0001, 0.001, 0.01, 0.1)
+
+start_time <- Sys.time()
+
+grid_search_deco.fixed.w.alpha.list.beta.list.normal <- run_grid_search(
+  bulk_data_methylation = data.frame(meth_mixtures[markers_ovr, 201:300]),
+  bulk_data_expression = data.frame(gene_exp_mixtures[, 201:300]),
+  data_expression_auxiliary = data.frame(expression_bulk_samples.auxiliary[, 201:300]),
+  k = 3,
+  alpha_list = alpha_values.list, 
+  beta_list = beta_values.list,
+  max_iterations = iterations_small_models,
+  threads = 0,
+  proportion_constraint_h = TRUE, 
+  fixed_h = data.frame(t(decoflex.combined_proportions)[, 201:300]))
+
+# Time difference of  mins hours: 3.33 hours for 500 iterations: 9pm. Actual 2.331292 hours. 3000: 15 hours:  12.78012 hours
+end_time <- Sys.time()
+end_time - start_time
+```
+
+Let's examine the behavior of the grid search process to gain insights into its performance.
+```{r decoflex.gridsearch.normal.plus.z.plots.performance, fig.width=5, fig.height=3}
+grid_search_deco.fixed.w.alpha.list.beta.list.normal.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.normal)
+
+#Performance plots
+DecoFlex::performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, main_parameter = 'alpha')
+```
+
+```{r decoflex.gridsearch.normal.plus.z.plots, fig.width=5, fig.height=3}
+
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, fill_value = 'log_delta_divergence_value')
+```
+
+
+Now, we can explore the detailed divergence observed in each matrix (x, y, z) to gain a comprehensive understanding of the differences.
+```{r decoflex.gridsearch.normal.plus.z.results.performance.detailed, fig.height=3, fig.width=5, warning=FALSE}
+#detailed plots with divergence in x, y, z.
+DecoFlex::plot_performance_for_each_model(grid_search_deco.fixed.w.alpha.list.beta.list.normal, plot_type = 'detailed', save.pdf = FALSE)
+```
+
+Let's examine the patterns that we have discovered in the matrix B for the normal samples.
+```{r  decoflex.gridsearch.normal.plus.z.fixed.b.matrix, fig.width=11, fig.height=6}
+
+model.alpha.beta.op.normal <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta.list.normal,
+  alpha = 0.01, beta = 0.01)
+
+par(cex.main=1)
+gplots::heatmap.2((as.matrix(model.alpha.beta.op.normal$b)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow =2, cexCol = 0.7, 
+                  main = "Cell types vs samples: matrix B - Normal")
+
+par(cex.main=1)
+gplots::heatmap.2(log(as.matrix(model.alpha.beta.op.normal$b)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow =2, cexCol = 0.7, 
+                  main = "Cell types vs samples: matrix B - Normal")
+```
+
+## 7.4. Creation of Z matrix for cancer separated
+
+I will attempt to extract the cancer profiles of the three cell types using the auxiliary matrix.
+```{r decoflex.gridsearch.tumor.plus.z}
+
+alpha_values.list <- c(0.0, 0.0001, 0.001, 0.01, 0.1)
+beta_values.list <- c(0.0, 0.0001, 0.001, 0.01, 0.1)
+
+start_time <- Sys.time()
+
+grid_search_deco.fixed.w.alpha.list.beta.list.tumors <- run_grid_search(
+  bulk_data_methylation = data.frame(meth_mixtures[markers_ovr, 1:200]),
+  bulk_data_expression = data.frame(gene_exp_mixtures[, 1:200]),
+  data_expression_auxiliary = data.frame(expression_bulk_samples.auxiliary[, 1:200]),
+  k = 3,
+  alpha_list = alpha_values.list, 
+  beta_list = beta_values.list,
+  max_iterations = iterations_small_models,
+  threads = 0,
+  proportion_constraint_h = TRUE, 
+  fixed_h = data.frame(t(decoflex.combined_proportions)[, 1:200]))
+
+# Time difference of  mins hours: 5.5 hours for 500 iterations: 7am. Actual 4.535179 hours. 1000 10 hours (8 pm) 1.078599 days
+end_time <- Sys.time()
+end_time - start_time
+```
+
+Let's analyze the behavior and performance of the grid search algorithm to gain insights into its effectiveness.
+```{r decoflex.gridsearch.tumor.plus.z.plots.performance, fig.width=5, fig.height=3}
+
+grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.tumors)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df, main_parameter = 'alpha')
+```
+
+
+```{r decoflex.gridsearch.tumor.plus.z.plots, fig.width=5, fig.height=3}
+
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df, fill_value = 'log_delta_divergence_value')
+```
+
+Now, we can examine the detailed divergence present in each matrix (x, y, z) to gain a comprehensive understanding of the variations.
+```{r decoflex.gridsearch.tumor.plus.z.results.performance.detailed, fig.height=3, fig.width=5, warning=FALSE}
+
+# Detailed plots with divergence in x, y, z.
+plot_performance_for_each_model(grid_search_deco.fixed.w.alpha.list.beta.list.tumors, plot_type = 'detailed', save.pdf = FALSE)
+```
+
+Let's examine the patterns that we have discovered in the matrix B for the cancer samples.
+```{r  decoflex.gridsearch.tumor.plus.z.fixed.b.matrix, fig.width=11, fig.height=6}
+
+model.alpha.beta.op.tumor <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta.list.tumors,
+  alpha = 0.0001, beta = 0.0001)
+
+par(cex.main=1)
+gplots::heatmap.2((as.matrix(model.alpha.beta.op.tumor$b)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow =2, cexCol = 0.7, 
+                  main = "Cell types vs samples: matrix B - Cancer")
+
+par(cex.main=1)
+gplots::heatmap.2(log(as.matrix(model.alpha.beta.op.tumor$b)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow =2, cexCol = 0.7, 
+                  main = "Cell types vs samples: matrix B - Cancer")
+```
+
+
+## 7.4 Visualization of the joint Z matrix for cancer and Normal
+
+Now, we are prepared to visually examine both A matrices for the separated models derived from cancer and normal samples.
+```{r  decoflex.gridsearch.normal.tumor.plus.z.b.matrix.analysis, fig.width=20, fig.height=7}
+
+model.alpha.beta.op.normal <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta.list.normal,
+  alpha = 0.01, beta = 0.01)
+
+model.alpha.beta.op.tumor <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.alpha.list.beta.list.tumors,
+  alpha = 0.0001, beta = 0.0001)
+
+
+model.alpha.beta.op.normal.b <- model.alpha.beta.op.normal$b
+rownames(model.alpha.beta.op.normal.b) <- c('Epithelium', 'Stroma', 'Immune')
+model.alpha.beta.op.tumor.b <- model.alpha.beta.op.tumor$b
+rownames(model.alpha.beta.op.tumor.b) <- c('Epithelium', 'Stroma', 'Immune')
+
+model.alpha.beta.op.cancer.normal <- cbind(model.alpha.beta.op.tumor.b, model.alpha.beta.op.normal.b)
+
+palette.v1 <- colorRampPalette(c("red", "black", "green"))(n = 1000)
+palette.v2 <- colorRampPalette(c("red", "green"))(n = 100)
+color_scheme <- redgreen(75)
+
+Colv  <- (as.matrix(model.alpha.beta.op.cancer.normal)) %>% t %>% dist %>% hclust %>% as.dendrogram %>%
+   set("branches_k_color", k = 3) %>% set("branches_lwd", 1) %>%
+   rotate_DendSer(ser_weight = dist(t(x)))
+
+par(cex.main=1)
+gplots::heatmap.2((as.matrix(model.alpha.beta.op.cancer.normal)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow =2, cexCol = 0.5, 
+                  dendrogram='column',     
+                  Rowv=FALSE,
+                  Colv=Colv,
+                  col = palette.v1,
+                  main = "Cell types vs samples: matrix B - Cancer and Normal")
+
+Colv  <- log(as.matrix(model.alpha.beta.op.cancer.normal)) %>% t %>% dist %>% hclust %>% as.dendrogram %>%
+   set("branches_k_color", k = 4) %>% set("branches_lwd", 1) %>%
+   rotate_DendSer(ser_weight = dist(t(x)))
+
+par(cex.main=1)
+plot.1 <- gplots::heatmap.2(log(as.matrix(model.alpha.beta.op.cancer.normal)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow = 2, cexCol = 0.5, 
+                  dendrogram='column',     
+                  Rowv=FALSE,
+                  Colv=Colv,
+                  col = palette.v2,
+                  main = "Cell types vs samples: matrix B - Cancer and Normal")
+print(plot.1$colDendrogram)
+
+
+Ltrs <- data.frame("A" = c(3,1), "B" = c(1,1), "C" = c(2,4), "D" = c(6,6))
+dend <- as.dendrogram(hclust(dist(t(Ltrs))))
+
+accumulator <- list();
+myleaves <- function(anode){
+    if(!is.list(anode))return(attr(anode,"label"))
+    accumulator[[length(accumulator)+1]] <<- (reduce(lapply(anode,myleaves),c))
+}
+
+myleaves(plot.1$colDendrogram)
+ret <- rev(accumulator)
+
+# partition_leaves(plot.1$colDendrogram)
+# plot.1$colDendrogram %>% get_nodes_attr("label")
+
+```
