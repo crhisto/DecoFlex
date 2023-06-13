@@ -424,10 +424,12 @@ By routinely running these tests and analyzing your code coverage, you can ensur
 
 The project has a CI pipeline configured in GitHub Actions using [Tidyverse R actions](https://github.com/r-lib/actions) . The pipeline performs the following steps:
 
-1. **Install Dependencies**: Installs the project dependencies required for the build process.
-2. **Lint**: Runs the linter to check for any code style or formatting issues.
+1. **Install Dependencies**: Installs the project dependencies required for the build process both OS and R software.
+2. **Check-r-package**: Runs the internal linter to check for any code style or formatting issues in addition to extra verifications such: --as-cran
 3. **Run Unit Tests**: Executes all the unit tests to ensure the functionality of the project.
 4. **Calculate Test Coverage**: Measures the test coverage of the project to assess code quality.
+
+In all cases it doesn't generate vignettes or manual
 
 ## Citing our Work
 If this NMMF implementation proves valuable for your research or projects, we kindly ask you to cite our work in your publications, as per the following:
