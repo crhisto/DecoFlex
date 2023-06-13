@@ -40,17 +40,23 @@ Before installing the `DecoFlex` package, there are several steps required to pr
    conda deactivate
    ```
 
-3. Configure your environment to have the python path correctly. If you're using RStudio, navigate to: RStudio > Tools > Global Options > Python > Select [Conda Environments] and choose the conda environment that you just created named 'r_DecoFlex'.
+3. In the latest version of RStudio (>2021) configure your environment to have the python path correctly. If you're using RStudio, navigate to: `RStudio > Tools > Global Options > Python > Select [Conda Environments]` and choose the conda environment that you just created named `r_DecoFlex`.
 
-4. Activate the environment in R and install the library:
+4. To proceed, you need to install the Python library [NMMFlex](www.github.com/crhisto/NMMFlex). You have the option to clone the GitHub repository directly. After doing so, in the subsequent step, replace the term `github_repository` with the actual path of your cloned repository.
+
+5. Check the conda directory usually `/home/[user_name]/miniconda3/bin/conda`: 
+
+   ```bash
+   which conda
+   ```
+
+6. Activate the environment in R and install the library replacing the `conda directory` and the vgithub_repository` path:
 
    ```R
    library(reticulate)
    reticulate::use_condaenv(condaenv = "r_DecoFlex", conda = "/Users/[username]/miniconda3/bin/conda")
    reticulate::py_install(packages="[github_repository]/NMMFlex/NMMFlexPy", pip=TRUE)
    ```
-
-Don't forget to replace your **username** and the **github_repository** in the path.
 
 ## Additional Dependencies
 
