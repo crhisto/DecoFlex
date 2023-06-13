@@ -30,6 +30,7 @@ jobs:
       - name: Test coverage
         run: |
           pwd
+          cd DecoFlexR
           R CMD INSTALL .
           source shim_package.sh
           Rscript -e 'covr::codecov()'
