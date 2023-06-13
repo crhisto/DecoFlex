@@ -1,4 +1,5 @@
 [![R-CMD-check](https://github.com/crhisto/DecoFlex/actions/workflows/r_check.yaml/badge.svg)](https://github.com/crhisto/DecoFlex/actions/workflows/r_check.yaml)
+[![test-coverage](https://github.com/crhisto/DecoFlex/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/crhisto/DecoFlex/actions/workflows/test-coverage.yaml)
 
 <!-- Diagram with NMMFlex -->
 <br />
