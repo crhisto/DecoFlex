@@ -21,7 +21,8 @@ run_grid_search(
   fixed_w = NULL,
   fixed_h = NULL,
   fixed_a = NULL,
-  fixed_b = NULL
+  fixed_b = NULL,
+  model_type
 )
 }
 \arguments{
@@ -72,6 +73,10 @@ is not fixed.}
 
 \item{fixed_b}{A matrix or NULL, Fixed matrix B. If NULL, it implies that B
 is not fixed.}
+
+\item{model_type}{If the model is core expression or methylation, therefore
+Y and X assignation are going to change.
+Values: c('core_expression', 'core_methylation')}
 }
 \value{
 A list of results from the grid search.

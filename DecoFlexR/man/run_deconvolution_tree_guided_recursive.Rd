@@ -21,7 +21,9 @@ run_deconvolution_tree_guided_recursive(
   param.logfc.threshold = 2,
   param.p_val_adj = 0.05,
   test.use.value = "wilcox",
-  marker_strategy = NULL,
+  marker_strategy = "keep_default_values",
+  minimum_markers = 4,
+  min_delta_cor_threshold = 0.05,
   verbose = FALSE
 )
 }
@@ -81,6 +83,14 @@ marker calculation. Default is 'wilcox'.}
 
 \item{marker_strategy}{An optional string representing the marker selection
 strategy. If NULL (default), a default strategy is used.}
+
+\item{minimum_markers}{The minimum number of marker genes to be selected,
+default is set to 4. This can be adjusted based on the analysis
+requirements.}
+
+\item{min_delta_cor_threshold}{Minimum difference between the correlation of
+t and t-1 steps. The idea is to skip genes that have small changes in
+the correlation. For default it is a 5\%.}
 
 \item{verbose}{A boolean indicating whether to print detailed messages during
 the execution of the function. Default is FALSE.}

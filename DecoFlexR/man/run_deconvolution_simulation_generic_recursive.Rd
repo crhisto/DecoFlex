@@ -16,7 +16,7 @@ run_deconvolution_simulation_generic_recursive(
   filter_markers = NULL,
   param.logfc.threshold = 2,
   param.p_val_adj = 0.05,
-  marker_strategy = NULL,
+  marker_strategy = "keep_default_values",
   verbose = FALSE
 )
 }
