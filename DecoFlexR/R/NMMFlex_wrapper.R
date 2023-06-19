@@ -432,25 +432,23 @@ run_grid_search <- function(bulk_data_methylation,
 #' from a multiple deconvolution function.
 #'
 #' @return A list, with the following elements:
-#' @itemize{
-#'   \item "x", "y", "z": The original input matrices.
-#'   \item "x_hat", "y_hat", "z_hat": The estimated matrices after 
-#'   deconvolution.
-#'   \item "w", "h": The matrices of factor loadings and factor scores.
-#'   \item "a", "b": Additional matrices related to the deconvolution model.
-#'   \item "is_x_sparse", "is_y_sparse", "is_z_sparse", "is_model_sparse": 
-#'   Boolean values indicating if the corresponding matrices are sparse.
-#'   \item "initialized_w", "initialized_h", "initialized_a", "initialized_b": 
-#'   The initial values used for the corresponding matrices in the 
-#'   deconvolution process.
-#'   \item "iterations": The number of iterations performed during the 
-#'   deconvolution process.
-#'   \item "divergence_value", "delta_divergence_value": The final divergence 
-#'   value and the change in divergence in the last iteration.
-#'   \item "running_info": Additional information about the running process.
-#'   \item "alpha", "beta", "alpha_regularizer_w": The parameters used in the 
-#'   deconvolution model.
-#' }
+#'   "x", "y", "z": The original input matrices.
+#'   "x_hat", "y_hat", "z_hat": The estimated matrices after 
+#'    deconvolution.
+#'   "w", "h": The matrices of factor loadings and factor scores.
+#'   "a", "b": Additional matrices related to the deconvolution model.
+#'   "is_x_sparse", "is_y_sparse", "is_z_sparse", "is_model_sparse": 
+#'    Boolean values indicating if the corresponding matrices are sparse.
+#'   "initialized_w", "initialized_h", "initialized_a", "initialized_b": 
+#'    The initial values used for the corresponding matrices in the 
+#'    deconvolution process.
+#'   "iterations": The number of iterations performed during the 
+#'    deconvolution process.
+#'   "divergence_value", "delta_divergence_value": The final divergence 
+#'    value and the change in divergence in the last iteration.
+#'   "running_info": Additional information about the running process.
+#'   "alpha", "beta", "alpha_regularizer_w": The parameters used in the 
+#'    deconvolution model.
 #'
 #' @details This function is designed to simplify the handling of multiple 
 #' deconvolution results by translating the returned object from Python into 

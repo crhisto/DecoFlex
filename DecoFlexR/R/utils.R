@@ -467,6 +467,8 @@ plot_performance_for_each_model <- function(grid_search_result, alpha=NULL,
 #'  values by the given alpha and beta. Optional, default is FALSE.
 #' @param include_divergences_x_y_z Logical. Indicates if the x, y and z 
 #'  divergences are showed in the plot. Optional, default is TRUE
+#' @param include_divergences Logical. Indicates if the divergence is showed 
+#'  in the plot. Optional, default is TRUE.
 #' @param include_zoom Logical. Indicates if the zoom component is included. 
 #'  Optional, default is FALSE.
 #' @param zoom_xlim_limits List with both limits to show the zoom: c(100, 1000)
