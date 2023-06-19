@@ -38,7 +38,6 @@ Imports:
     ggplot2 (>= 3.4.2),
     grDevices (>= 3.6.3),
     plyr (>= 1.8.8), 
-    tidyverse (>= 2.0.0), 
     ggforce (>= 0.4.1)
 Suggests:
     knitr,
