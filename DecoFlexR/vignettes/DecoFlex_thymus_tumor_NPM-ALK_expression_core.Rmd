@@ -69,6 +69,14 @@ if("methylKit" %in% rownames(installed.packages())){
   library(methylKit)
 }
 
+if("dendextend" %in% rownames(installed.packages())){
+  library(dendextend)
+}else{
+  install.packages('dendextend')
+  library(dendextend)
+}
+
+
 
 if("SeuratDisk" %in% rownames(installed.packages())){
   library(SeuratDisk)
@@ -97,8 +105,8 @@ library(DESeq2)
 library(BiocGenerics)
 library(Matrix)
 library(SeuratDisk)
-  library(methylKit)
-
+library(methylKit)
+library(gplots)
 ```
 
 # 1. Data adquisition
@@ -611,7 +619,11 @@ perc.meth.thymus <- percMethylation(methylation.filtered.united)/100
 # Adding identifiers to be able to create Z matrix and make comparisons 
 # with other references
 rownames(perc.meth.thymus) <- paste0('cg_', methylation.filtered.united$start)
-
+perc.meth.thymus <- data.frame(perc.meth.thymus)
+perc.meth.thymus$chr <- methylation.filtered.united$chr
+perc.meth.thymus$start <- methylation.filtered.united$start
+perc.meth.thymus$end <- methylation.filtered.united$end
+perc.meth.thymus$strand <- methylation.filtered.united$strand
 
 # Let's rename the samples to be compatible with the bulk data
 # The original order: "C1","C2","C3","KO1","KO2","KO3","Tu1","Tu2","Tu3","AlkKO1","AlkKO2","AlkKO3"
@@ -620,7 +632,7 @@ standard_name_thymus <- c("Thy_WT_1", "Thy_WT_2", "Thy_WT_3",
                      "Tumor_ALKpos_WT_1", "Tumor_ALKpos_WT_2", "Tumor_ALKpos_WT_3",
                      "Thy_ALKpos_KO_1", "Thy_ALKpos_KO_2", "Thy_ALKpos_KO_3")
                      
-colnames(perc.meth.thymus) <- standard_name_thymus
+colnames(perc.meth.thymus) <- c(standard_name_thymus, c('chr', 'start', 'end', 'strand'))
 
 #Finally I have the methylation level for each CpG and each sample
 summary(perc.meth.thymus)
@@ -631,7 +643,7 @@ ncol(perc.meth.thymus)
 #save(perc.meth.thymus, file = "data_thymus/meth/methylation_thymus_12_samples.rData")
 #load(file = "data_thymus/meth/methylation_thymus_12_samples.rData")
 
-hist(perc.meth.thymus, main = 'Histogram Methylation')
+hist(perc.meth.thymus[,standard_name_thymus], main = 'Histogram Methylation')
 
 ```
 Filtering of the methylation data
@@ -732,11 +744,28 @@ end_time - start_time
 ```
 
 ## 7.1.1 Performance of the deconvolution
-TODO
+
+Let's analyze the behavior and performance of the grid search algorithm to gain insights into its effectiveness.
+```{r decoflex.gridsearch.thymus.plots.performance, fig.width=5, fig.height=3}
+
+grid_search_deco.dnmt1.ko.expr.meth.thymus.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.dnmt1.ko.expr.meth.thymus)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.dnmt1.ko.expr.meth.thymus.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.dnmt1.ko.expr.meth.thymus.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.dnmt1.ko.expr.meth.thymus.df, main_parameter = 'alpha')
+```
+
+```{r decoflex.gridsearch.thymus.plots, fig.width=7, fig.height=4}
+
+plot_heatmap_alpha_beta(grid_search_deco.dnmt1.ko.expr.meth.thymus.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.dnmt1.ko.expr.meth.thymus.df, fill_value = 'log_delta_divergence_value')
+```
+
 
 
 ## 7.3. Correlation methylation and signature. It turned out that the shared genes are just 12, therefore correlation doesn't make sense in this case.
-```{r}
+```{r correlation.methylation.signature}
 #importing the external data
 library("readxl")
 methylation_data <- read_excel('data_thymus/external_references/DNA_methylation_data.xlsx', sheet = "means")
@@ -794,82 +823,184 @@ corr.methylation
 
 Let's construct the auxiliary matrix corresponding to the Z matrix. During this research phase, we need to develop the following strategies:
 
-1. As each row represents a Gene and each column symbolizes a sample, it's necessary to summarize the methylation for each gene X Sample. The goal is to evaluate the methylation value within the vicinity of 100bp after the CpG.
+1. In this dataset, each row corresponds to a gene, and each column represents a sample. It's essential to aggregate the methylation values for each gene-sample pair. The objective here is to assess the methylation value within each gene, along with an adjacent 1000 base pairs (bp) region preceding the CpG site. This preceding region, known as the promoter region, typically consists of a high concentration of CpG sites (forming CpG islands) and is the primary target for methylation.
 
-TODO: update all this part of the code to make the Z matrix expression core!
 
-```{r creation.auxiliary.matrix.expression.methylation.z.data, include=FALSE}
+```{r function.import.libraries}
+#Function to install and load libraries
+check_install_load_library <- function(library_name, type = 'BiocManager' ){
+  
+  if(type == 'BiocManager'){
+    if(library_name %in% rownames(installed.packages())){
+      library(library_name, character.only=TRUE)
+    }else{
+      BiocManager::install(library_name)
+      library(library_name, character.only=TRUE)
+    }
+  }
+  
+}
+```
 
-# https://bioconductor.org/packages/release/data/annotation/html/FDb.InfiniumMethylation.hg19.html
-# https://bioconductor.org/packages/release/data/annotation/manuals/FDb.InfiniumMethylation.hg19/man/FDb.InfiniumMethylation.hg19.pdf
+Now I will create the first Z matrix without scaling
+```{r creation.auxiliary.matrix.expression.methylation.z.data}
+check_install_load_library('BSgenome.Mmusculus.UCSC.mm10')
+check_install_load_library('org.Mm.eg.db')
+check_install_load_library('GenomicFeatures')
+check_install_load_library("TxDb.Mmusculus.UCSC.mm10.knownGene")
+check_install_load_library("biovizBase")
+check_install_load_library("genomation")
 
-# 1. First let's take the 450k methylation reference and ge tthe markers that we use in the deconvolution
-hm450 <- get450k()
-probenames <- c(markers_ovr)
-probes <- hm450[probenames]
-probes.df <- data.frame(ID_REF = names(probes), probes)
+##################################
+# let's check the genes
 
-#2. Now we get the TSS(transcriptional start site) related with those markers CpGs, meaning that we got the genes in the  neighborhood of the CpG 
-tss.list <- getNearestTSS(probes)
-tss.list.df <- data.frame(ID_REF = rownames(tss.list), tss.list)
-transcript.list <- getNearestTranscript(probes)
-transcript.list.df <- data.frame(ID_REF = rownames(transcript.list), transcript.list)
+# 1. I can also download the database as library.
+mm10KG <- TxDb.Mmusculus.UCSC.mm10.knownGene
 
-expression_bulk_samples <- gene_exp_mixtures
-# 3. After I'm going to join the CpG information with the gene name.
-expression.data.filtered <- expression_bulk_samples[rownames(expression_bulk_samples) 
-                                                    %in% transcript.list.df$nearestGeneSymbol, ]
-expression.data.filtered.df <- data.frame(expression.data.filtered)
-expression.data.filtered.df$nearestGeneSymbol <- rownames(expression.data.filtered.df)
-expression.CpGs <- transcript.list.df %>% inner_join(expression.data.filtered.df, by="nearestGeneSymbol")
+# Importing just genes for normal chromosomes and with the gene_id
+chromosome_list <- c(paste0('chr', 1:19), 'chrX', 'chrY')
+filter <- list(tx_chrom = chromosome_list)
+genes.gr <- genes(mm10KG, filter = filter, columns=c("gene_id"))
+# Droping the chromosomes that are not used. https://support.bioconductor.org/p/95879/
+seqlevels(genes.gr) <- seqlevelsInUse(genes.gr)
 
-#4. I found 430 over 500 CpGs. The initial idea will be to create NA values for the marker CpGs that I couldn't find.
-expression.CpGs.missing.values <- probes.df %>% left_join(expression.CpGs, by="ID_REF")
-rownames(expression.CpGs.missing.values) <- expression.CpGs.missing.values$ID_REF
+# I need the gene names
+feature.maping.symbol <- mapIds(org.Mm.eg.db, unique(genes.gr$gene_id), 'SYMBOL', 'ENTREZID')
+feature.maping.symbol.df <- data.frame(ID_REF = unique(genes.gr$gene_id), gene_name=feature.maping.symbol)
 
-#5. I have the matrix that I will use in the deconvolution with Generalized Kullback Leibler convergence based on mutual information
-expression_bulk_samples.auxiliary <- expression.CpGs.missing.values[markers_ovr, colnames(expression_bulk_samples)]
-expression_bulk_samples.auxiliary[is.na(expression_bulk_samples.auxiliary)] <- 0.000001
+
+
+#2. Importing promoters and reducing the segments that can be joined.
+promoters <- promoters(mm10KG,upstream = 2000, downstream = 100)
+promoters <- reduce(promoters)
+
+#3. Importing different parts 
+FiveUTR <- reduce(flatGrl(fiveUTRsByTranscript(mm10KG)))
+ThreeUTR <- reduce(flatGrl(threeUTRsByTranscript(mm10KG)))
+CDS <- reduce(cds(mm10KG))
+Introns <- reduce(flatGrl(intronsByTranscript(mm10KG)))
+
+
+
+################
+# now the methylation
+
+# I create the GRanges object for the methylation, thinking about the contend.
+perc.meth.thymus.gr <- makeGRangesFromDataFrame(perc.meth.thymus.df)
+# Another method
+perc.meth.thymus.gr <- GRanges(perc.meth.thymus.df$chr, 
+                              IRanges(start = perc.meth.thymus.df$start, 
+                                      end = perc.meth.thymus.df$end),
+                              strand = perc.meth.thymus.df$strand, 
+                              ID_METH = rownames(perc.meth.thymus.df))
+
+
+perc.meth.thymus.gr <- perc.meth.thymus.gr[perc.meth.thymus.gr@seqnames %in% chromosome_list]
+# Droping the chromosomes that are not used. https://support.bioconductor.org/p/95879/
+seqlevels(perc.meth.thymus.gr) <- seqlevelsInUse(perc.meth.thymus.gr)
+
+
+# Now I will see the overlapping with genes
+overlaps.genes.cpgs <- findOverlaps(genes.gr, perc.meth.thymus.gr)
+
+# Now I will create a dataset with the summary
+overlaps.genes.cpgs.df <- data.frame(overlaps.genes.cpgs)
+# Assign the actual values
+overlaps.genes.cpgs.df$ID_REF <- genes.gr[overlaps.genes.cpgs.df$queryHits]$gene_id
+overlaps.genes.cpgs.df$ID_METH <- perc.meth.thymus.gr[overlaps.genes.cpgs.df$subjectHits]$ID_METH
+
+
+# Add cpg names
+perc.meth.thymus$ID_METH <- rownames(perc.meth.thymus)
+
+# 4. join the data with gene names
+expression.CpGs.hits <- overlaps.genes.cpgs.df %>% left_join(feature.maping.symbol.df, by="ID_REF")
+#with methylation data
+expression.CpGs.hits.meth <- expression.CpGs.hits %>% left_join(perc.meth.thymus, by="ID_METH")
+
+# 5. I have the matrix that I will use in the deconvolution with Generalized Kullback Leibler convergence based on mutual information
+expression.CpGs.hits.meth.by.gene <- expression.CpGs.hits.meth %>% group_by(gene_name) %>% 
+  summarise(Thy_WT_1=sum(Thy_WT_1),
+            Thy_WT_2= sum(Thy_WT_2),
+            Thy_WT_3= sum(Thy_WT_3),
+            
+            Thy_KO_1= sum(Thy_KO_1),
+            Thy_KO_2= sum(Thy_KO_2),
+            Thy_KO_3= sum(Thy_KO_3),
+            
+            Tumor_ALKpos_WT_1= sum(Tumor_ALKpos_WT_1),
+            Tumor_ALKpos_WT_2= sum(Tumor_ALKpos_WT_2),
+            Tumor_ALKpos_WT_3= sum(Tumor_ALKpos_WT_3),
+            
+            Thy_ALKpos_KO_1= sum(Thy_ALKpos_KO_1),
+            Thy_ALKpos_KO_2= sum(Thy_ALKpos_KO_2),
+            Thy_ALKpos_KO_3= sum(Thy_ALKpos_KO_3),
+            .groups = 'drop') %>% 
+  as.data.frame()
 
 #6. Finally I have to scale from 0 to 1
-colMeans(expression_bulk_samples.auxiliary, na.rm = TRUE)
-library("scales")
-expression_bulk_samples.auxiliary.scaled <- apply(expression_bulk_samples.auxiliary, 2, rescale)
-colMeans(expression_bulk_samples.auxiliary.scaled, na.rm = TRUE)
-print(paste0('Rows: ', nrow(expression_bulk_samples.auxiliary.scaled),
-             ', Columns:', ncol(expression_bulk_samples.auxiliary.scaled)))
+scale_matrix_z <- function(matrix){
+  library("scales")
+  print('Original: ')
+  print(colMeans(matrix, na.rm = TRUE))
+  matrix.scaled <- apply(matrix, 2, rescale)
+  print('Scaled: ')
+  print(colMeans(matrix.scaled, na.rm = TRUE))
+  message(paste0('Rows: ', nrow(matrix.scaled),
+               ', Columns:', ncol(matrix.scaled)))
+  return(matrix.scaled)
+}
 
-#7. Let's replace the NAs values with a value almost 0 (1e20), however in the future the library has to be able to use the NA as advantage.
-expression_bulk_samples.auxiliary.scaled[is.na(expression_bulk_samples.auxiliary.scaled)] <- 0.000001
+#Finally I get the matrix scaled
+expression.CpGs.hits.meth.by.gene.scaled <- scale_matrix_z(expression.CpGs.hits.meth.by.gene[standard_name_thymus])
+rownames(expression.CpGs.hits.meth.by.gene.scaled) <- expression.CpGs.hits.meth.by.gene$gene_name
+
+#non scaled version
+expression.CpGs.hits.meth.by.gene.final <- as.matrix(expression.CpGs.hits.meth.by.gene)
+rownames(expression.CpGs.hits.meth.by.gene.final) <- expression.CpGs.hits.meth.by.gene.final[, c('gene_name')]
+expression.CpGs.hits.meth.by.gene.final <- expression.CpGs.hits.meth.by.gene.final[,standard_name_thymus]
+
+
 ```
 
 
-We can create an additional auxiliary matrix, Z, by incorporating the division of expression by methylation as a factor or score.
-```{r creation.auxiliary.matrix.expression.methylation.z.data.score, include=FALSE}
-# expression for nearest Gene of the CpG divided between methylation.
-expression_bulk_samples.auxiliary.score <- expression_bulk_samples.auxiliary/gene_exp_mixtures
-
-#Let's see if there are infinite or na values.
-which(is.infinite(as.matrix(expression_bulk_samples.auxiliary.score)))
-which(is.na(as.matrix(expression_bulk_samples.auxiliary.score)))
-```
-
-Additionally, we can create an auxiliary matrix, Z, that summarizes the information by calculating the expression divided by methylation as a factor or score. This calculation will be performed separately for cancer and normal samples to provide a consolidated summary.
+Additionally, we can create an auxiliary matrix, Z, that summarizes the information by calculating the expression divided by methylation as a factor or score.
 ```{r creation.auxiliary.matrix.expression.methylation.z.data.summarizing}
 
-methylation.data <- data.frame(meth_mixtures)
-# expression for nearest Gene of the CpG divided between methylation.
-expression_bulk_samples.auxiliary.summ <- cbind(tumor = rowSums(expression_bulk_samples.auxiliary[1:200]),
-                                                normal = rowSums(expression_bulk_samples.auxiliary[201:300]))
+# I also can create an score expresion/methylation or the other way around.
+eset.thymus.bulk.sparse.df.filtered <- data.frame(as.matrix(eset.thymus.bulk.sparse@assayData$exprs))
+#6391
+shared_genes <- intersect(rownames(eset.thymus.bulk.sparse.df.filtered), expression.CpGs.hits.meth.by.gene$gene_name) 
 
-methylation.summ <- cbind(tumor = rowSums(methylation.data[1:200]),
-                                                normal = rowSums(methylation.data[201:300]))
 
-expression_bulk_samples.auxiliary.score.summ.tumor.normal <- expression_bulk_samples.auxiliary.summ/methylation.summ[rownames(expression_bulk_samples.auxiliary.summ),]
+##### SCORES
 
-#Let's see if there are infinite or na values.
-which(is.infinite(as.matrix(expression_bulk_samples.auxiliary.score.summ.tumor.normal)))
-which(is.na(as.matrix(expression_bulk_samples.auxiliary.score.summ.tumor.normal)))
+#lets order the datasets 
+expression.CpGs.hits.meth.by.gene.ordered <- expression.CpGs.hits.meth.by.gene[match(shared_genes, expression.CpGs.hits.meth.by.gene$gene_name),standard_name_thymus]
+eset.thymus.bulk.sparse.df.filtered.ordered <- eset.thymus.bulk.sparse.df.filtered[match(shared_genes, rownames(eset.thymus.bulk.sparse.df.filtered)),standard_name_thymus]
+
+
+###### Score A: gene_expression / sum(neighboring CpGs methylation)
+
+# Calculation of the score A
+expression.CpGs.hits.meth.by.gene.score.a <- expression.CpGs.hits.meth.by.gene.ordered / eset.thymus.bulk.sparse.df.filtered.ordered
+#7.1 Let's replace the NAs values with a value almost 0 (1e20), however in the future the library has to be able to use the NA as advantage.
+expression.CpGs.hits.meth.by.gene.score.a[is.na(expression.CpGs.hits.meth.by.gene.score.a)] <- 0.0000000001
+expression.CpGs.hits.meth.by.gene.score.a[sapply(expression.CpGs.hits.meth.by.gene.score.a, is.infinite)] <- 0.0000000001
+
+
+
+######### Score B: sum(neighboring CpGs methylation)/gene_expression 
+expression.CpGs.hits.meth.by.gene.score.b <- eset.thymus.bulk.sparse.df.filtered.ordered / expression.CpGs.hits.meth.by.gene.ordered
+#7.1 Let's replace the NAs values with a value almost 0 (1e20), however in the future the library has to be able to use the NA as advantage.
+expression.CpGs.hits.meth.by.gene.score.b[is.na(expression.CpGs.hits.meth.by.gene.score.b)] <- 0.0000000001
+expression.CpGs.hits.meth.by.gene.score.b[sapply(expression.CpGs.hits.meth.by.gene.score.b, is.infinite)] <- 0.0000000001
+
+
+#6. Finally I have to scale from 0 to 1
+expression.CpGs.hits.meth.by.gene.score.a.scaled <- scale_matrix_z(expression.CpGs.hits.meth.by.gene.score.a[standard_name_thymus])
+expression.CpGs.hits.meth.by.gene.score.b.scaled <- scale_matrix_z(expression.CpGs.hits.meth.by.gene.score.b[standard_name_thymus])
+
 ```
 
 
@@ -885,16 +1016,20 @@ better_model.thymus <- choose_model_from_grid_search_object(grid_search_deco.dnm
 inter.bulk.sc.thymus.vs.markers <- intersect(inter.bulk.sc.thymus, all_markers.thymus)
 length(inter.bulk.sc.thymus.vs.markers)
 
+#Also shared with the z matrix: 250
+inter.bulk.sc.thymus.vs.markers.vs.z.matrix <- intersect(inter.bulk.sc.thymus.vs.markers, rownames(expression.CpGs.hits.meth.by.gene.final))
+length(inter.bulk.sc.thymus.vs.markers.vs.z.matrix)
+
 #I got the actual proportions fixed for the best
-W_expression<- data.frame(reference_w.7.celltypes.thymus$basis.mvw[inter.bulk.sc.thymus.vs.markers, ])
+W_expression<- data.frame(reference_w.7.celltypes.thymus$basis.mvw[inter.bulk.sc.thymus.vs.markers.vs.z.matrix, ])
 A_methylation <- data.frame(better_model.thymus$a)
 H_proportions <- data.frame(deco.actual.data.thymus.results$back_propagation_proportions_top_detailed)
 
 
-bulk_data_expr <- eset.thymus.bulk.sparse.df.filtered[inter.bulk.sc.thymus.vs.markers, standard_name_thymus]
+bulk_data_expr <- eset.thymus.bulk.sparse.df.filtered[inter.bulk.sc.thymus.vs.markers.vs.z.matrix, standard_name_thymus]
 bulk_data_meth <- perc.meth.thymus[, standard_name_thymus]
 
-
+matrix_z_auxiliary_data <- data.frame(expression.CpGs.hits.meth.by.gene.final[inter.bulk.sc.thymus.vs.markers.vs.z.matrix, standard_name_thymus])
 fixed_w <- data.frame(reference_w.7.celltypes.thymus$basis.mvw[inter.bulk.sc.thymus.vs.markers, ])
 
 alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
@@ -903,13 +1038,13 @@ beta_values.list <-  c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
 start_time <- Sys.time()
 
 grid_search_deco.fixed.w.a.h.alpha.list.thymus <- run_grid_search(
-  bulk_data_expression = data.frame(bulk_data_expr[inter.bulk.sc.thymus.vs.markers,]),
+  bulk_data_expression = data.frame(bulk_data_expr[inter.bulk.sc.thymus.vs.markers.vs.z.matrix,]),
   bulk_data_methylation = data.frame(bulk_data_meth[,]),
-  data_expression_auxiliary = data.frame(expression_bulk_samples.auxiliary.score.thymus[,]),
+  data_expression_auxiliary = matrix_z_auxiliary_data[inter.bulk.sc.thymus.vs.markers.vs.z.matrix, ],
   k = 7,
   alpha_list = alpha_values.list, 
   beta_list = beta_values.list,
-  max_iterations = as.integer(iterations_small_models),
+  max_iterations = as.integer(2),
   threads = 0,
   delta_threshold=1e-10,
   proportion_constraint_h = as.logical(TRUE),  
@@ -924,6 +1059,23 @@ end_time - start_time
 ```
 
 ## 8.2.1. Performance of the deconvolution.
+
+Let's analyze the behavior and performance of the grid search algorithm to gain insights into its effectiveness.
+```{r decoflex.gridsearch.thymus.plus.z.plots.performance, fig.width=5, fig.height=3}
+
+grid_search_deco.fixed.w.a.h.alpha.list.thymus.df <- create_dataframe_results_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.thymus)
+
+#Performance plots
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.thymus.df)
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.thymus.df, main_parameter = 'beta')
+performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.thymus.df, main_parameter = 'alpha')
+```
+
+```{r decoflex.gridsearch.thymus.plus.z.plots, fig.width=7, fig.height=4}
+
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.h.alpha.list.thymus.df, fill_value = 'log_divergence_value')
+plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.h.alpha.list.thymus.df, fill_value = 'log_delta_divergence_value')
+```
 
 ## 8.3 Plot of B matrix: relation expression. -> methylation
 
@@ -940,17 +1092,17 @@ rownames(model.alpha.beta.op.thymus.b) <- list_pseudotime.thymus
 
 palette.v1 <- colorRampPalette(c("red", "black", "green"))(n = 1000)
 palette.v2 <- colorRampPalette(c("red", "green"))(n = 100)
-color_scheme <- redgreen(75)
+color_scheme <- gplots::redgreen(75)
 
 Colv  <- (as.matrix(model.alpha.beta.op.thymus.b)) %>% t %>% dist %>% hclust %>% as.dendrogram %>%
-   set("branches_k_color", k = 3) %>% set("branches_lwd", 1) %>%
+   set("branches_k_color", k = 2) %>% set("branches_lwd", 1) %>%
    rotate_DendSer(ser_weight = dist(t(x)))
 
 par(cex.main=1)
 gplots::heatmap.2((as.matrix(model.alpha.beta.op.thymus.b)),
                   trace="none",
                   margins=c(13,12), 
-                  cexRow =2, cexCol = 0.5, 
+                  cexRow =2, cexCol = 2, 
                   dendrogram='column',     
                   Rowv=FALSE,
                   Colv=Colv,
@@ -958,36 +1110,20 @@ gplots::heatmap.2((as.matrix(model.alpha.beta.op.thymus.b)),
                   main = "Cell types vs samples: thymus")
 
 Colv  <- log(as.matrix(model.alpha.beta.op.thymus.b)) %>% t %>% dist %>% hclust %>% as.dendrogram %>%
-   set("branches_k_color", k = 4) %>% set("branches_lwd", 1) %>%
+   set("branches_k_color", k = 2) %>% set("branches_lwd", 1) %>%
    rotate_DendSer(ser_weight = dist(t(x)))
 
 par(cex.main=1)
 plot.1 <- gplots::heatmap.2(log(as.matrix(model.alpha.beta.op.thymus.b)),
                   trace="none",
                   margins=c(13,12), 
-                  cexRow = 2, cexCol = 0.5, 
+                  cexRow = 2, cexCol = 2, 
                   dendrogram='column',     
                   Rowv=FALSE,
                   Colv=Colv,
                   col = palette.v2,
                   main = "Cell types vs samples in thymus")
 print(plot.1$colDendrogram)
-
-
-Ltrs <- data.frame("A" = c(3,1), "B" = c(1,1), "C" = c(2,4), "D" = c(6,6))
-dend <- as.dendrogram(hclust(dist(t(Ltrs))))
-
-accumulator <- list();
-myleaves <- function(anode){
-    if(!is.list(anode))return(attr(anode,"label"))
-    accumulator[[length(accumulator)+1]] <<- (reduce(lapply(anode,myleaves),c))
-}
-
-myleaves(plot.1$colDendrogram)
-ret <- rev(accumulator)
-
-# partition_leaves(plot.1$colDendrogram)
-# plot.1$colDendrogram %>% get_nodes_attr("label")
 
 ```
 
