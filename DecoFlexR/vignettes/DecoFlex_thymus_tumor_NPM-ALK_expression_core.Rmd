@@ -864,6 +864,23 @@ genes.gr <- genes(mm10KG, filter = filter, columns=c("gene_id"))
 # Droping the chromosomes that are not used. https://support.bioconductor.org/p/95879/
 seqlevels(genes.gr) <- seqlevelsInUse(genes.gr)
 
+# Let's try to create a different version of the gene list but with some base pair added
+# at the beginning in the promoter region (between 100bp and 1000bp)
+genes.gr.df <- data.frame(genes.gr)
+bp.to.add <- 1000
+genes.extended.gr <- GRanges(genes.gr.df$seqnames, 
+                              IRanges(start = genes.gr.df$start-bp.to.add, 
+                                      end = genes.gr.df$end),
+                              strand = genes.gr.df$strand, 
+                              gene_id = genes.gr.df$gene_id)
+
+analysis_type <- 'only_gene'
+analysis_type <- 'gene_plus_promotor_region'
+if(analysis_type !='only_gene'){
+  print(paste0('Extension of gene + promotor region of ', bp.to.add, ' bp.'))
+  genes.gr <- genes.extended.gr
+}
+
 # I need the gene names
 feature.maping.symbol <- mapIds(org.Mm.eg.db, unique(genes.gr$gene_id), 'SYMBOL', 'ENTREZID')
 feature.maping.symbol.df <- data.frame(ID_REF = unique(genes.gr$gene_id), gene_name=feature.maping.symbol)
@@ -1006,7 +1023,7 @@ expression.CpGs.hits.meth.by.gene.score.b.scaled <- scale_matrix_z(expression.Cp
 
 ## 8.2. Deconvolution
 
-We will calculate the B matrix using the Z matrix, incorporating the scores for all seven cell types 
+We will calculate the B matrix using the Z matrix, incorporating the scores for all seven cell types. I need to fix a possible problem with marker genes, since it get reduced when I tried to recover information about methylation. Maybe I can add zeros to the genes that are not present.
 ```{r decoflex.gridsearch.thymus.plus.z}
 
 #let's choose the better model
