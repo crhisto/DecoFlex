@@ -13,9 +13,10 @@ knitr::opts_chunk$set(
   comment = "#>"
 )
 
-# Configuration for the models execution. Min: 3
-iterations_big_models <- 2 # Target 3000
-iterations_small_models <- 2 # Target: 300
+# Configuration for the models execution. Minimum: 3
+iterations_big_models <- 4000 # Target 4000
+iterations_medium_models <- 300 # Target 300
+iterations_small_models <- 200 # Target: 200
 
 ```
 
@@ -94,6 +95,15 @@ if("dendextend" %in% rownames(installed.packages())){
   library(dendextend)
 }
 
+if("EDec" %in% rownames(installed.packages())){
+  library(dendextend)
+}else{
+  devtools::install_github("BRL-BCM/EDec")
+  library(EDec)
+}
+
+
+
 
 #Other libraries.
 library(EDec)
@@ -107,12 +117,27 @@ library(FDb.InfiniumMethylation.hg19)
 library(dplyr)
 library(tidyverse)
 library(dendextend)
+library(ggforce)
 ```
 
 
 Importing the library
 ```{r setup_decoflex}
-library(DecoFlex)
+
+library(reticulate)
+reticulate::use_condaenv(condaenv = "r_DecoFlex", conda = "/home/ubuntu/anaconda3/bin/anaconda")
+reticulate::py_install(envname="~/anaconda3/envs/r_DecoFlex", packages="pyqtwebengine", pip=TRUE)
+reticulate::py_install(envname="~/anaconda3/envs/r_DecoFlex", packages="pyqt5", pip=TRUE)
+reticulate::py_install(envname="~/anaconda3/envs/r_DecoFlex", packages="/mnt_volumen/GIT_REPOSITORIES/NMMFlex/NMMFlexPy", pip=TRUE)
+
+
+#Check DecoFlex modified installation
+if("DecoFlex" %in% rownames(installed.packages())){
+  library(DecoFlex)
+}else{
+  devtools::install_github(repo = "crhisto/DecoFlex/DecoFlexR" )
+  library(DecoFlex)
+}
 ```
 
 # 2. Data adquisition
@@ -181,21 +206,20 @@ end_time - start_time
 Now, let's assess the outcomes of the deconvolution:
 
 1. We will examine the progression of the divergence value until the end of the executions, both in their normal and scaled forms.
-```{r decoflex.deconvolution.getting.w.delta.alpha.zero.performance, warning=FALSE, fig.width=5, fig.height=3}
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero.performance, warning=FALSE, fig.width=5, fig.height=5}
 
+#Checking just for divergences
 plot_deconvolution_performance_x_y_z_total(
   deco.alpha.beta.zero.results$running_info,
   alpha=0,
   beta = 0,
-  scale_parameters = FALSE)
-
-plot_deconvolution_performance_x_y_z_total(
-  deco.alpha.beta.zero.results$running_info,
-  alpha=0,
-  beta = 0,
-  scale_parameters = TRUE)
+  scale_parameters = TRUE,
+  include_divergences_x_y_z = FALSE,
+  include_divergences = TRUE,
+  include_zoom = TRUE,
+  zoom_xlim_limits=c(2000, 3000), 
+  include_title = FALSE)
 ```
-
 
 2. We will analyze heatmaps that depict the correlation between the Matrix W (calculated methylation profiles) and the public methylation reference, in addition to the true methylation profiles.
 ```{r decoflex.deconvolution.getting.w.delta.alpha.zero.results, fig.width=7, fig.height=6}
@@ -211,31 +235,56 @@ plot_Edec.estimated.profiles.vs.truly.mixtures(
   deco.alpha.beta.zero.results$w,
   markers_ovr)
 ```
+Now we need to select the correspondence between calculated methylomes and the true ones.
+```{r matches.celltypes.deconvolution.results}
+
+# Using the correlation between the true methylation and the calculated one
+cors.decoflex.vs.true.methylation <- cor(true_cell_type_meth[markers_ovr,],
+                         deco.alpha.beta.zero.results$w[markers_ovr,])
+
+cors.decoflex.vs.true.methylation <- data.frame(cors.decoflex.vs.true.methylation)
+
+#First I have to select automatically the correspondence between ranks and the actuals cell types based on their correlation.
+matches_types = list()
+for(row_true_value in 1:nrow(cors.decoflex.vs.true.methylation)){
+  true_cell_type_name <- rownames(cors.decoflex.vs.true.methylation)[row_true_value]
+  row_max_value <- which.max(cors.decoflex.vs.true.methylation[row_true_value,])
+  rank_predicted <- colnames(cors.decoflex.vs.true.methylation)[row_max_value]
+  
+  print(paste0('true_cell_type_name : ',  true_cell_type_name, ' -> ', rank_predicted))
+  
+  # Add the match to the list
+  matches_types[[true_cell_type_name]] <- rank_predicted
+}
+matches_types
+
+```
+
 
 To assess the proportions accurately, we combine the cancer and normal tissues for comparison.
 ```{r decoflex.deconvolution.getting.w.delta.alpha.zero.results.proportions.comparison, fig.width=7, fig.height=7}
 par(mfrow=c(2,2))
 
-plot(t(deco.alpha.beta.zero.results$h)[,"rank_2"],
+plot(t(deco.alpha.beta.zero.results$h)[, matches_types$CancerEpithelium],
      true_cell_type_props[,"CancerEpithelium"],col="steelblue",
      xlab = "Estimated cancer epithelial proportion",
      ylab = "True cancer epithelial proportion")
 abline(0,1)
 
-plot(t(deco.alpha.beta.zero.results$h)[,"rank_0"],
+plot(t(deco.alpha.beta.zero.results$h)[,matches_types$NormalEpithelium],
      true_cell_type_props[,"NormalEpithelium"],col="steelblue",
      xlab = "Estimated normal epithelial proportion",
      ylab = "True normal epithelial proportion")
 abline(0,1)
 
-plot(t(deco.alpha.beta.zero.results$h)[,"rank_1"],
+plot(t(deco.alpha.beta.zero.results$h)[,matches_types$CancerImmune],
      rowSums(true_cell_type_props[,c("CancerImmune","NormalImmune")]),
      col="steelblue",
      xlab = "Estimated immune proportion",
      ylab = "True immune proportion")
 abline(0,1)
 
-plot(t(deco.alpha.beta.zero.results$h)[,"rank_3"],
+plot(t(deco.alpha.beta.zero.results$h)[,matches_types$CancerStroma],
      rowSums(true_cell_type_props[,c("CancerStroma","NormalStroma")]),
      col="steelblue",
      xlab = "Estimated stromal proportion",
@@ -275,10 +324,14 @@ gplots::heatmap.2(cors.decoflex.vs.true.proportions,
 
 Next, we will merge the proportions obtained from both cancer and normal samples in the decoflex results.
 ```{r decoflex.combined.proportions}
+
 # Combine proportions of cancer and normal epithelial cell types
-decoflex.combined_proportions = cbind(rowSums(t(deco.alpha.beta.zero.results$h)[,c("rank_0","rank_2")]),
-                             t(deco.alpha.beta.zero.results$h)[,"rank_3"],
-                             t(deco.alpha.beta.zero.results$h)[,"rank_1"])
+decoflex.combined_proportions = cbind(
+  rowSums(t(deco.alpha.beta.zero.results$h)[, c(matches_types$NormalEpithelium,
+                                                matches_types$CancerEpithelium)]),
+  t(deco.alpha.beta.zero.results$h)[, matches_types$NormalStroma],
+  t(deco.alpha.beta.zero.results$h)[, matches_types$NormalImmune])
+
 colnames(decoflex.combined_proportions) = c("Epithelial",
                                    "Stromal",
                                    "Immune")
@@ -295,10 +348,6 @@ Following this, we will proceed to replicate the model by separating the deconvo
 
 ```{r decoflex.gridsearch.tumors}
 
-# #Let's try the deconvolution method library
-# NMMFlex <- import('NMMFlex')
-# NMMFlex_grid_search <- NMMFlex$grid_search()
-
 alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 0.5, 1, 10, 50, 100)
 
 start_time <- Sys.time()
@@ -311,7 +360,7 @@ grid_search_deco.fixed.w.alpha.list.beta_zero.tumors <- run_grid_search(
   k = 3,
   alpha_list = alpha_values.list, 
   beta_list = NULL,
-  max_iterations = iterations_small_models,
+  max_iterations = iterations_medium_models,
   threads = 0,
   proportion_constraint_h = TRUE, 
   fixed_h = data.frame(t(decoflex.combined_proportions)[, 1:200]))
@@ -343,7 +392,7 @@ performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.bet
 ```
 
 
-```{r decoflex.gridsearch.tumors.plots, fig.width=6, fig.height=2}
+```{r decoflex.gridsearch.tumors.plots, fig.width=8, fig.height=2}
 
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df, fill_value = 'log_divergence_value')
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.tumors.df, fill_value = 'log_delta_divergence_value')
@@ -355,7 +404,7 @@ Let's now examine the correlation between matrix A (expression profile) and the 
 
 model.tumors.nmf <- choose_model_from_grid_search_object(
   grid_search_deco.fixed.w.alpha.list.beta_zero.tumors,
-  alpha = 0.00001, beta=0)
+  alpha = 0.001, beta=0)
 
 # Plot estimated transcription profiles against the true cell 
 # type specific transcription profiles
@@ -460,7 +509,7 @@ grid_search_deco.fixed.w.alpha.list.beta_zero.normal <- run_grid_search(
   k = 3,
   alpha_list = alpha_values.list, 
   beta_list = NULL,
-  max_iterations = iterations_small_models,
+  max_iterations = iterations_medium_models,
   threads = 0,
   proportion_constraint_h = TRUE, 
   fixed_h = data.frame(t(decoflex.combined_proportions)[, 201:300]))
@@ -483,7 +532,7 @@ performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.bet
 performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, main_parameter = 'alpha')
 ```
 
-```{r decoflex.gridsearch.normal.plots, fig.width=6, fig.height=2}
+```{r decoflex.gridsearch.normal.plots, fig.width=9, fig.height=2}
 
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, fill_value = 'log_divergence_value')
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta_zero.normal.df, fill_value = 'log_delta_divergence_value')
@@ -825,7 +874,7 @@ performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.alpha.list.t
 performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, main_parameter = 'alpha')
 ```
 
-```{r decoflex.gridsearch.normal.tumor.single.model.plots, fig.width=6, fig.height=2}
+```{r decoflex.gridsearch.normal.tumor.single.model.plots, fig.width=9, fig.height=2}
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, fill_value = 'log_divergence_value')
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.alpha.list.tumors.normal.df, fill_value = 'log_delta_divergence_value')
 
@@ -895,7 +944,7 @@ mean(cors.decoflex.vs.true.proportions.6.celltypes[cors.decoflex.vs.true.proport
 cors.decoflex.vs.true.proportions.6.celltypes.normal <- cors.decoflex.vs.true.proportions.6.celltypes[c('NormalEpithelium', 'NormalStroma', 'NormalImmune'), c('normalEpithelial', 'normalStromal', 'normalImmune')]
 mean(cors.decoflex.vs.true.proportions.6.celltypes.normal[cors.decoflex.vs.true.proportions.6.celltypes.normal>=.97])
 
-#TUMOR: mean r pearson correlation = 
+#TUMOR: mean r pearson correlation = 0.9958706
 cors.decoflex.vs.true.proportions.6.celltypes.cancer <- cors.decoflex.vs.true.proportions.6.celltypes[c('CancerEpithelium', 'CancerStroma', 'CancerImmune'), c('cancerEpithelial', 'cancerStromal', 'cancerImmune')]
 mean(cors.decoflex.vs.true.proportions.6.celltypes.cancer[cors.decoflex.vs.true.proportions.6.celltypes.cancer>=.97])
 
@@ -1054,7 +1103,7 @@ performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list
 performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, main_parameter = 'alpha')
 ```
 
-```{r decoflex.gridsearch.normal.tumor.plus.z.plots, fig.width=5, fig.height=3}
+```{r decoflex.gridsearch.normal.tumor.plus.z.plots, fig.width=7, fig.height=4}
 
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, fill_value = 'log_divergence_value')
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.a.h.alpha.list.tumors.normal.df, fill_value = 'log_delta_divergence_value')
@@ -1078,7 +1127,7 @@ grid_search_deco.fixed.w.alpha.list.beta.list.normal <- run_grid_search(
   k = 3,
   alpha_list = alpha_values.list, 
   beta_list = beta_values.list,
-  max_iterations = iterations_small_models,
+  max_iterations = iterations_medium_models,
   threads = 0,
   proportion_constraint_h = TRUE, 
   fixed_h = data.frame(t(decoflex.combined_proportions)[, 201:300]))
@@ -1098,7 +1147,7 @@ performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.bet
 performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, main_parameter = 'alpha')
 ```
 
-```{r decoflex.gridsearch.normal.plus.z.plots, fig.width=5, fig.height=3}
+```{r decoflex.gridsearch.normal.plus.z.plots, fig.width=7, fig.height=4}
 
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, fill_value = 'log_divergence_value')
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.normal.df, fill_value = 'log_delta_divergence_value')
@@ -1172,7 +1221,7 @@ performance_plot_multiple_deconvolutions(grid_search_deco.fixed.w.alpha.list.bet
 ```
 
 
-```{r decoflex.gridsearch.tumor.plus.z.plots, fig.width=5, fig.height=3}
+```{r decoflex.gridsearch.tumor.plus.z.plots, fig.width=7, fig.height=4}
 
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df, fill_value = 'log_divergence_value')
 plot_heatmap_alpha_beta(grid_search_deco.fixed.w.alpha.list.beta.list.tumors.df, fill_value = 'log_delta_divergence_value')
