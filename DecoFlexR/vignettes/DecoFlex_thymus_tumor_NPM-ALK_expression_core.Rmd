@@ -14,6 +14,1040 @@ knitr::opts_chunk$set(
 )
 ```
 
+
+**Computational Epigenomics Research group:** [epi-logos.com](https://epi-logos.com/)
+
+# Introduction (vignette #2)
+
+Wi will refer to some code, documentation and plots from this: https://github.com/crhisto/thymus_NPM-ALK_notebook
+
+This tutorial will cover the following content:
+
+
+
 ```{r setup}
 library(DecoFlex)
 ```
+
+TODO create function to install differents and load.
+First, we have to install 2 libraries that have been modified in order to use sparse matrices in R: [Biobase](https://github.com/Bioconductor/Biobase) and [xbioc](https://github.com/renozao/xbioc). Then we imported a modified version of the library [SCDC](https://meichendong.github.io/SCDC/articles/SCDC.html) that has been modified to support: sparse matrices, parallelism, and Dynamic threshold for markers selection, among other improvements. Finally, we imported the general libraries required to run the complete pipeline.
+```{r importing_libraries, include=FALSE}
+if (!require("devtools")) {
+  install.packages("devtools")
+}
+
+#Check Biobase modified installation
+if("Biobase" %in% rownames(installed.packages())){
+  library(Biobase)
+}else{
+  devtools::install_github( repo = "crhisto/Biobase" )
+  library(Biobase)
+}
+
+#Check xbioc modified installation
+if("xbioc" %in% rownames(installed.packages())){
+  library(xbioc)
+}else{
+  devtools::install_github( repo = "crhisto/xbioc" )
+  library(xbioc)
+}
+
+#Check hdf5r installation
+if("hdf5r" %in% rownames(installed.packages())){
+  library(hdf5r)
+}else{
+  #install the package hdf5r
+  #Use the following command in ubuntu linux: sudo apt-get install libhdf5-dev
+  install.packages("hdf5r")
+  library(hdf5r)
+}
+
+if("methylKit" %in% rownames(installed.packages())){
+  library(methylKit)
+}else{
+  BiocManager::install("methylKit")
+  library(methylKit)
+}
+
+
+if("SeuratDisk" %in% rownames(installed.packages())){
+  library(SeuratDisk)
+}else{
+  remotes::install_github("mojaveazure/seurat-disk")
+  library(SeuratDisk)
+}
+
+
+
+#for deconvolution SCDC library
+library(pheatmap)
+library(foreach)
+library(doParallel)
+library(Seurat)
+library(fpc)
+library(tidyverse)
+library(fpc)
+library(stringr)
+library(dbscan)
+library(slam)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(DESeq2)
+library(BiocGenerics)
+library(Matrix)
+library(SeuratDisk)
+  library(methylKit)
+
+```
+
+# 1. Data adquisition
+
+First let's load the bulk and single-cell data from thymus using the github repository
+```{bash downloading_data, eval=FALSE, include=FALSE}
+mkdir data_thymus
+cd data_thymus
+#downloading the scRNA-seq dataset
+wget https://zenodo.org/record/3711134/files/thymus_annotated_matrix_files.zip
+unzip thymus_annotated_matrix_files.zip
+
+#downloading the bulk RNA-seq dataset
+wget https://raw.githubusercontent.com/crhisto/thymus_NPM-ALK_notebook/master/data/eset.thymus.bulk.sparse.RData.zip
+unzip eset.thymus.bulk.sparse.RData.zip
+```
+
+Importing of the bulk data with the 12 samples in a ESET object type supporting sparse matrices.
+```{r import_bulk_data_object}
+path.data <- paste0(getwd(), '/', 'data_thymus/')
+load(paste0(path.data, "eset.thymus.bulk.sparse.RData"))
+eset.thymus.bulk.sparse
+```
+```{bash}
+pip install anndata
+```
+
+
+```{python}
+
+import anndata
+anndata
+adata = anndata.read("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/HTA08.v02.A04.Science_mouse_total.h5ad")
+adata.write("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/HTA08.v02.A04.Science_mouse_total.zip.h5ad", compression="gzip")
+
+```
+
+
+Importing data for the single cell dataset and creation of the corresponding seurat objects for both: the complete set of time points and the last 3 time points ('4W','8W','24W').
+```{r creating_seural_scRNA_seq_data}
+path.data.sc <- paste0(path.data, "") 
+
+
+#convert
+string_converted <- SeuratDisk::Convert(paste0(path.data.sc, "HTA08.v02.A04.Science_mouse_total.zip.h5ad"),
+                                         overwrite = TRUE, dest = "h5seurat", assay = "RNA")
+#locad
+seurat_object.all <- SeuratDisk::LoadH5Seurat(string_converted, meta.data = FALSE)
+
+# I get all the columns for all tisue samples for all experiments.
+annotations.all <- read.table(paste0(path.data.sc, "HTA08.v02.A04.Science_mouse_total.csv"), 
+                 header = TRUE,
+                 sep = ",")
+
+#I get the names of the cell types (clusters) to create the dataset
+paste(shQuote(sort(unique(annotations.all$cell.types))), collapse=", ")
+paste(shQuote(sort(unique(annotations.all$age))), collapse=", ")
+
+cluster_list.thymus <- data.frame(cell.types = c('aDC', 'B', 'CD4+T', 'CD8+T', 'cTEC', 'DC1', 'DC2', 'DN(P)', 'DN(Q)', 'DP(P)', 'DP(Q)', 'Endo', 'Epi_unknown', 'Ery', 'Fb', 'HSC', 'IELpA', 'IELpB/NKT', 'Mac', 'Mono', 'mTEC', 'NK', 'NMP', 'pDC', 'TEC_early', 'Treg', 'VSMC', 'αβT(entry)', 'γδT'), cluster_normalized = paste0('cluster_', 1:29), cluster_order = as.numeric(c(1:29)))
+
+#I add the cluster normalized for avoiding problems with names and special characters
+annotations.all <- annotations.all %>% inner_join(cluster_list.thymus, by = "cell.types")
+
+#I add the information from the annotations to the seurat object
+seurat_object.all@meta.data$index_cell_id <- annotations.all$index
+seurat_object.all@meta.data$cell_types_name <- annotations.all$cell.types
+seurat_object.all@meta.data$stage <- annotations.all$stage
+seurat_object.all@meta.data$age <- annotations.all$age
+seurat_object.all@meta.data$sample_id <- annotations.all$sample_id
+seurat_object.all@meta.data$cluster_normalized <- annotations.all$cluster_normalized
+
+#Assign the identity
+Idents(seurat_object.all) <- seurat_object.all$age
+
+seurat_object.all <- subset(seurat_object.all, idents = c('E12', 'E13', 'E14', 'E15', 'E16', 'E17', 'E18', 'P0', '4W','8W','24W'))
+
+#add filter of samples in the seurat object
+seurat_object.4w_8w_24w <- subset(seurat_object.all, idents = c('4W','8W','24W'))
+
+#create the count matrix base on the seurat object
+counts.thymus.4w_8w_24w <- create_count_matrix(seurat_object.4w_8w_24w)
+counts.thymus.all <- create_count_matrix(seurat_object.all)
+```
+
+Creation of object with the scRNA-seq data for the deconvolution
+```{r create_eset_scrna_reference, echo = T, results = 'hide'}
+#Use the function to create the sparse eset object
+eset.sc.thymus.4.sparse <- create_sparse_eset_object(counts.thymus.4w_8w_24w, seurat_object.4w_8w_24w)
+head(eset.sc.thymus.4.sparse)
+
+eset.sc.thymus.4.sparse.all <- create_sparse_eset_object(counts.thymus.all, seurat_object.all)
+head(eset.sc.thymus.4.sparse.all)
+
+#Fixing the samples names staring with numbers. Instead I will add the string: 'sample_' to fix it
+eset.sc.thymus.4.sparse_fixed <- eset.sc.thymus.4.sparse
+eset.sc.thymus.4.sparse_fixed$age <- paste0('sample_', eset.sc.thymus.4.sparse_fixed$age)
+
+```
+
+# 2. Deconvolution with automatic hierarchy and simulation
+
+Se can see that this has to be improve with the intra-checking that is missing. This is not the optimal configuration.
+```{r deconvolution.hierarchical.multi.level.schema.automatic.selection}
+
+#Parameters for the execution
+single_cell_data_exp <- eset.sc.thymus.4.sparse_fixed
+sub_clusters_var <- 'cluster_normalized'
+sample <- 'age'
+subset_celltypes <-  paste0('cluster_', c(8,9,10,11,28,4,3))
+use_min_cor_strategy = TRUE
+delete_shared_level_markers = FALSE
+delete_shared_internal_markers = FALSE
+
+start_time <- Sys.time()
+
+#Running the process that automatically selects the hierarchy and runs the deconvolution.
+deco.simul.auto.hierarchy.selection.thymus <- hierachy_selection_plus_deconvolution(
+  single_cell_data_exp = single_cell_data_exp,
+  var_cell_type = sub_clusters_var,
+  subset_celltypes = subset_celltypes,
+  number_clusters_one_celltype = 1,
+  min_size_leaf = 4,
+  var_sample = sample,
+  random_seed = NULL, 
+  use_min_cor_strategy = use_min_cor_strategy, 
+  delete_shared_level_markers = delete_shared_level_markers, 
+  delete_shared_internal_markers = delete_shared_internal_markers, 
+  filter_markers = NULL,
+  param.logfc.threshold = 0.7, 
+  param.p_val_adj = 0.05,
+  filter_main_markers = FALSE,
+  verbose = TRUE)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+#3. Manual hierarchy analysis 
+
+```{r correlation.thymus, fig.width=10, fig.height=10}
+#I create the reference of all celltypes
+reference_w.7.celltypes.thymus <- create_basis_multiple(x = eset.sc.thymus.4.sparse,
+                                            ct.sub = paste0('cluster_', c(8,9,10,11,28,4,3)),
+                                            ct.varname = 'cluster_normalized',
+                                            sample = 'age')
+
+#TODO check if this is the same function...
+reference.thymus <- decoflex_build_cell_reference(x = eset.sc.thymus.4.sparse, 
+                                                  ct.varname =sub_clusters_var, 
+                                                  sample = 'age')
+
+color_gradient <- colorRampPalette(c("white","steelblue"))
+
+reference_w.7.celltypes.thymus.with.names <- reference_w.7.celltypes.thymus$basis.mvw[, paste0('cluster_', c(8,9,10,11,28,4,3))]
+colnames(reference_w.7.celltypes.thymus.with.names) <- cluster_list.thymus$cell.types[c(8,9,10,11,28,4,3)]
+
+cor.reference_matrix_w.7.celltypes.thymus <- cor(reference_w.7.celltypes.thymus.with.names)
+gplots::heatmap.2(cor.reference_matrix_w.7.celltypes.thymus,
+                  cellnote = round(cor.reference_matrix_w.7.celltypes.thymus, 2), 
+                  trace="none",
+                  col=color_gradient(10),
+                  breaks=seq(0,1,0.1),
+                  margins=c(12,12), 
+                  cexRow = 1, cexCol = 1, 
+                  dendrogram = "both", 
+                  key=FALSE)
+
+```
+
+Let's try to see how is the hierarchy in the original dataset.
+```{r hierarchy.analysis}
+
+# Finding distance matrix
+distance_mat <- dist(t(cor(reference_w.7.celltypes.thymus.with.names)), method = 'euclidean')
+
+# Fitting Hierarchical clustering Model
+# to training dataset
+set.seed(240)  # Setting seed,  "complete", "average"
+Hierar_cl <- hclust(distance_mat, method = "average")
+#Hierar_cl
+ 
+# Plotting dendrogram
+plot(Hierar_cl)
+ 
+# Choosing no. of clusters
+# Cutting tree by height
+abline(h = 110, col = "green")
+ 
+# Cutting tree by no. of clusters
+fit_7_celltypes.thymus <- cutree(Hierar_cl, k = 3 )
+fit_7_celltypes.thymus
+ 
+table(fit_7_celltypes.thymus)
+rect.hclust(Hierar_cl, k = 3, border = "green")
+ 
+```
+
+
+#4. Creation of manual hierarchy
+
+```{r hierarchy.creation}
+#Binary hierarchy.
+hierarchical_clustering_sc_thymus <- list(
+  '1'=list(tree_level=0, leaf_number=1, celltype_list=paste0('cluster_', c(8,9,10,11,28,4,3)), 
+           next_level_clustering=list(
+             '1'=list(tree_level=1, leaf_number=1, celltype_list=paste0('cluster_', c(11, 28, 4, 3)), next_level_clustering=list(
+               '1'=list(tree_level=2, leaf_number=1, celltype_list=paste0('cluster_', c(11, 28)), next_level_clustering=NULL), 
+               '2'=list(tree_level=2, leaf_number=2, celltype_list=paste0('cluster_', c(4, 3)), next_level_clustering=NULL)
+             )), 
+             '2'=list(tree_level=1, leaf_number=2, celltype_list=paste0('cluster_', c(8, 9, 10)), next_level_clustering=NULL)
+           )
+  )
+)
+
+```
+
+#5. Deconvolution with simulation
+
+```{r deconvolution.simulation}
+detach(package:DecoFlex,unload=TRUE)
+library(DecoFlex)
+
+#Parameters for the simulation
+single_cell_data_exp <- eset.sc.thymus.4.sparse_fixed
+hierarchy = hierarchical_clustering_sc_thymus
+sub_clusters_var <- 'cluster_normalized'
+sample <- 'age'
+use_min_cor_strategy = TRUE
+delete_shared_level_markers = FALSE
+delete_shared_internal_markers = FALSE
+
+
+start_time <- Sys.time()
+
+#let's run de simulation
+deco.simulation.oligo.tree_guided.recursive.results <- 
+  run_deconvolution_simulation_generic_recursive(single_cell_data_exp = single_cell_data_exp, 
+                                                 hierarchy = hierarchy,
+                                                 sub_clusters_var = sub_clusters_var,
+                                                 sample = sample, 
+                                                 use_min_cor_strategy = use_min_cor_strategy, 
+                                                 delete_shared_level_markers = delete_shared_level_markers, 
+                                                 delete_shared_internal_markers = delete_shared_internal_markers,
+                                                 param.logfc.threshold = 0.7,
+                                                 param.p_val_adj = 0.05,
+                                                 verbose = TRUE)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## 5.1. Simulation plots vs wt samples
+
+```{r}
+
+#Create pseudo 
+pseudo.bulk.data.thymus <- generateBulk_allcells(single_cell_data_exp,
+                                            ct.varname = sub_clusters_var,
+                                            sample = sample,
+                                            ct.sub = NULL,
+                                            verbose = TRUE)
+
+order_normalized <- paste0('cluster_', c(8,9,10,11,28,4,3))
+order_samples <- c('sample_4W','sample_8W','sample_24W')
+list_pseudotime <- c('DN(P)', 'DN(Q)', 'DP(P)', 'DP(Q)', 'αβT(entry)', 'CD8+T', 'CD4+T')
+
+#Calculate the proportion for clusters for 7 clusters
+real_proportion <- as.data.frame.matrix(pseudo.bulk.data.thymus$truep)
+
+real_proportion.pseudotime <- real_proportion[order_samples, order_normalized]
+
+real_proportion.pseudotime.rescaled <- NULL
+for(counter in 1:nrow(real_proportion.pseudotime)){
+  new_row <- real_proportion.pseudotime[counter,]/sum(real_proportion.pseudotime[counter,])
+  real_proportion.pseudotime.rescaled <- rbind(real_proportion.pseudotime.rescaled, new_row)
+}
+
+#just checking. Everything should sum up 1.
+rowSums(real_proportion.pseudotime.rescaled)
+#Adding names
+colnames(real_proportion.pseudotime.rescaled) <- list_pseudotime
+
+
+#Now lest compare with the calculated proportions from the pseudo bulk data.
+proportions_calculated_pseudo_bulk <- t(deco.simulation.oligo.tree_guided.recursive.results$result_deco$back_propagation_proportions_top_detailed[order_normalized, order_samples])
+colnames(proportions_calculated_pseudo_bulk) <- list_pseudotime
+
+# By celltype
+cor(real_proportion.pseudotime.rescaled, proportions_calculated_pseudo_bulk)
+
+#By sample
+cor(t(real_proportion.pseudotime.rescaled), t(proportions_calculated_pseudo_bulk))
+
+#Creation dataframes for individual correlation
+proportions_calculated_pseudo_bulk.df <- data.frame(t(proportions_calculated_pseudo_bulk))
+real_proportion.pseudotime.rescaled.df <- data.frame(t(real_proportion.pseudotime.rescaled))
+
+#0.8796212
+cor(proportions_calculated_pseudo_bulk.df$sample_4W, real_proportion.pseudotime.rescaled.df$sample_4W, method = c("pearson"))
+#0.877927
+cor(proportions_calculated_pseudo_bulk.df$sample_8W, real_proportion.pseudotime.rescaled.df$sample_8W, method = c("pearson"))
+
+#0.921099
+cor(proportions_calculated_pseudo_bulk.df$sample_24W, real_proportion.pseudotime.rescaled.df$sample_24W, method = c("pearson"))
+
+```
+
+
+# 6. Deconvolution with manual hierarchy
+
+Now we will run the deconvolution with the actual bulk dataset from Thymus experiment.
+```{r}
+library(DecoFlex)
+
+#Replacing zeros and nulls with a small value.
+eset.thymus.bulk.sparse.df.filtered <- data.frame(as.matrix(eset.thymus.bulk.sparse@assayData$exprs))
+eset.thymus.bulk.sparse.df.filtered[is.na(eset.thymus.bulk.sparse.df.filtered)] <- 0.00000001
+eset.thymus.bulk.sparse.df.filtered[eset.thymus.bulk.sparse.df.filtered==0] <- 0.00000001
+
+
+#Parameters for the simulation
+single_cell_data_exp <- eset.sc.thymus.4.sparse_fixed
+hierarchy = hierarchical_clustering_sc_thymus$`1`
+bulk_data = eset.thymus.bulk.sparse.df.filtered
+sub_clusters_var <- 'cluster_normalized'
+sample <- 'age'
+use_min_cor_strategy = TRUE
+delete_shared_level_markers = FALSE
+delete_shared_internal_markers = FALSE
+
+start_time <- Sys.time()
+
+#let's run de simulation
+deco.actual.data.thymus.results <- 
+  run_deconvolution_tree_guided_recursive(bulk_data = bulk_data,
+                                          single_cell_data_exp = single_cell_data_exp, 
+                                          hierarchy = hierarchy,
+                                          sub_clusters_var = sub_clusters_var,
+                                          sample = sample, 
+                                          use_min_cor_strategy = use_min_cor_strategy, 
+                                          delete_shared_level_markers = delete_shared_level_markers, 
+                                          delete_shared_internal_markers = delete_shared_internal_markers,
+                                          param.logfc.threshold = 0.5, # 0.2
+                                          param.p_val_adj = 0.05,
+                                          minimum_markers = 8,
+                                          min_delta_cor_threshold = 0.0, 
+                                          verbose = TRUE)
+# Time difference of 37.13297 mins 0.2, 00
+end_time <- Sys.time()
+end_time - start_time
+```
+
+##6.1. Plot real proportions vs WT
+
+Comparison between the actual proportions of the single-cell data and the estimated proportions of the bulk thymus data, specifically with the Ctrl sample.
+```{r plot_comparison_ctrl_proportion}
+order_normalized <- paste0('cluster_', c(8,9,10,11,28,4,3))
+order_samples <- c('sample_4W','sample_8W','sample_24W')
+list_pseudotime <- c('DN(P)', 'DN(Q)', 'DP(P)', 'DP(Q)', 'αβT(entry)', 'CD8+T', 'CD4+T')
+
+#Calculate the proportion for clusters for 7 clusters
+real_proportion <- as.data.frame.matrix(deco.simulation.oligo.tree_guided.recursive.results$pseudo.bulk.data$truep)
+
+real_proportion.pseudotime <- real_proportion[order_samples, order_normalized]
+
+real_proportion.pseudotime.rescaled <- NULL
+for(counter in 1:nrow(real_proportion.pseudotime)){
+  new_row <- real_proportion.pseudotime[counter,]/sum(real_proportion.pseudotime[counter,])
+  real_proportion.pseudotime.rescaled <- rbind(real_proportion.pseudotime.rescaled, new_row)
+}
+
+#just checking. Everything should sum up 1.
+rowSums(real_proportion.pseudotime.rescaled)
+#Adding names
+colnames(real_proportion.pseudotime.rescaled) <- list_pseudotime
+
+
+#wt data
+wt_data <- t(deco.actual.data.thymus.results$back_propagation_proportions_top_detailed[order_normalized, c('Thy_WT_1', 'Thy_WT_2', 'Thy_WT_3')])
+wt_data <- data.frame(wt_data)
+colnames(wt_data) <- list_pseudotime
+
+
+#Joinning the bulk data wt
+comparison_real_vs_deconvolution <- rbind(wt_data, real_proportion.pseudotime.rescaled)
+
+
+thymus.proportions.summarized <- as.data.frame(t(comparison_real_vs_deconvolution[]))
+
+thymus.proportions.summarized <- cbind(thymus.proportions.summarized, cluster_name = rownames(thymus.proportions.summarized))
+
+
+thymus.proportions.summarized.melt <- melt(thymus.proportions.summarized, id.vars='cluster_name')
+thymus.proportions.summarized.melt <- cbind(thymus.proportions.summarized.melt, type = '', type_normalized = '', stringsAsFactors=FALSE)
+
+thymus.proportions.summarized.melt$cluster_name <- factor(thymus.proportions.summarized.melt$cluster_name, levels = list_pseudotime)
+
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 6) == 'Thy_WT'] <- 'Ctrl')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 6) == 'Thy_KO'] <- 'KO')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 15) == 'Tumor_ALKpos_WT'] <- 'ALK')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'Thy_ALKpos_KO'] <- 'ALKKO')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'sample_4W'] <- '4w_thymus')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'sample_8W'] <- '8w_thymus')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'sample_24W'] <- '24w_thymus')
+
+##thymus.proportions.summarized.melt$type_normalized <- factor(thymus.proportions.summarized.melt$type_normalized, levels= c('Ctrl', 'KO', 'ALK', 'ALKKO', '4w_thymus', '8w_thymus', '24w_thymus'))
+
+thymus.proportions.summarized.melt$type_normalized <- factor(thymus.proportions.summarized.melt$type_normalized, levels= c('Ctrl','4w_thymus', '8w_thymus', '24w_thymus'))
+
+#real proportion vs control
+thymus.proportions.deconvolution.summarized.melt <- rbind(thymus.proportions.summarized.melt)
+
+p <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.deconvolution.summarized.melt$type_normalized %in% c('4w_thymus','8w_thymus', '24w_thymus', 'Ctrl') & thymus.proportions.deconvolution.summarized.melt$cluster_name %in% list_pseudotime,], aes(x=cluster_name, y=value, color=type_normalized)) +
+  geom_point(size=6, shape=20) +
+  labs(title=NULL,x="Cell Type", y = "Proportion") + theme_linedraw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.text=element_text(size=16),
+        legend.title = element_text(size = 16),
+          legend.text = element_text(size = 16)) + 
+  ylim(0, 1.0)
+ 
+p +  scale_color_manual(name = "Sample", breaks = c('4w_thymus', '8w_thymus', '24w_thymus', 'Ctrl'), values = c("turquoise3", "bisque2", "darkgrey", "#136c38")) + theme_light()
+```
+## 6.2. Plot real proportions
+
+Comparison between the actual proportions of the single-cell data and the estimated proportions of the bulk thymus data, specifically with the Ctrl sample.
+```{r plot_comparison_ctrl_proportion}
+order_normalized <- paste0('cluster_', c(8,9,10,11,28,4,3))
+order_samples <- c('sample_4W','sample_8W','sample_24W')
+list_pseudotime <- c('DN(P)', 'DN(Q)', 'DP(P)', 'DP(Q)', 'αβT(entry)', 'CD8+T', 'CD4+T')
+
+#Calculate the proportion for clusters for 7 clusters
+real_proportion <- as.data.frame.matrix(deco.simulation.oligo.tree_guided.recursive.results$pseudo.bulk.data$truep)
+
+real_proportion.pseudotime <- real_proportion[order_samples, order_normalized]
+
+real_proportion.pseudotime.rescaled <- NULL
+for(counter in 1:nrow(real_proportion.pseudotime)){
+  new_row <- real_proportion.pseudotime[counter,]/sum(real_proportion.pseudotime[counter,])
+  real_proportion.pseudotime.rescaled <- rbind(real_proportion.pseudotime.rescaled, new_row)
+}
+
+#just checking. Everything should sum up 1.
+rowSums(real_proportion.pseudotime.rescaled)
+#Adding names
+colnames(real_proportion.pseudotime.rescaled) <- list_pseudotime
+
+
+# All experiments
+experimental_data <- t(deco.actual.data.thymus.results$back_propagation_proportions_top_detailed[order_normalized, ])
+experimental_data <- data.frame(experimental_data)
+colnames(experimental_data) <- list_pseudotime
+
+
+#Joining the bulk data wt
+comparison_real_vs_deconvolution <- rbind(experimental_data, real_proportion.pseudotime.rescaled)
+
+
+thymus.proportions.summarized <- as.data.frame(t(comparison_real_vs_deconvolution[]))
+
+thymus.proportions.summarized <- cbind(thymus.proportions.summarized, cluster_name = rownames(thymus.proportions.summarized))
+
+
+thymus.proportions.summarized.melt <- melt(thymus.proportions.summarized, id.vars='cluster_name')
+thymus.proportions.summarized.melt <- cbind(thymus.proportions.summarized.melt, type = '', type_normalized = '', stringsAsFactors=FALSE)
+
+thymus.proportions.summarized.melt$cluster_name <- factor(thymus.proportions.summarized.melt$cluster_name, levels = list_pseudotime)
+
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 6) == 'Thy_WT'] <- 'Ctrl')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 6) == 'Thy_KO'] <- 'KO')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 15) == 'Tumor_ALKpos_WT'] <- 'ALK')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'Thy_ALKpos_KO'] <- 'ALKKO')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'sample_4W'] <- '4w_thymus')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'sample_8W'] <- '8w_thymus')
+thymus.proportions.summarized.melt <- within(thymus.proportions.summarized.melt, type_normalized[str_sub(variable, 1, 13) == 'sample_24W'] <- '24w_thymus')
+
+thymus.proportions.summarized.melt$type_normalized <- factor(thymus.proportions.summarized.melt$type_normalized, levels= c('Ctrl', 'KO', 'ALK', 'ALKKO', '4w_thymus', '8w_thymus', '24w_thymus'))
+
+#thymus.proportions.summarized.melt$type_normalized <- factor(thymus.proportions.summarized.melt$type_normalized, levels= c('Ctrl', 'KO'))
+
+#real proportion vs control
+thymus.proportions.deconvolution.summarized.melt <- rbind(thymus.proportions.summarized.melt)
+
+p <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.deconvolution.summarized.melt$type_normalized %in% c('Ctrl', 'KO', 'ALK', 'ALKKO') & thymus.proportions.deconvolution.summarized.melt$cluster_name %in% list_pseudotime,], aes(x=cluster_name, y=value, color=type_normalized)) +
+  geom_point(size=6, shape=20) +
+  labs(title=NULL,x="Cell Type", y = "Proportion") + theme_linedraw() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.text=element_text(size=16),
+        legend.title = element_text(size = 16),
+          legend.text = element_text(size = 16)) + 
+  ylim(0, 1.0)
+ 
+p +  scale_color_manual(name = "Sample", breaks = c('4w_thymus', '8w_thymus', '24w_thymus', 'Ctrl', 'KO', 'ALK', 'ALKKO'), values = c("turquoise3", "bisque2", "darkgrey", "#136c38", "blue", "red", "orange")) + theme_light()
+```
+
+# 7. Deconvolution with methylation data
+
+## 7.1 Methylation data
+
+Now I will import the methylation data. Check this: https://nbis-workshop-epigenomics.readthedocs.io/en/latest/content/tutorials/methylationSeq/Seq_Tutorial.html
+```{r import.methylation.data}
+
+load('data_thymus/meth/MethylKitDiffs.rData')
+
+# Now I will get the object with all samples, filter it and join the samples
+methylation.filtered <- filterByCoverage(myobj, lo.count=20, lo.perc=NULL, hi.count=NULL, hi.perc=99.9)
+methylation.filtered.united <- unite(methylation.filtered, destrand=FALSE)
+perc.meth.thymus <- percMethylation(methylation.filtered.united)/100
+
+# Adding identifiers to be able to create Z matrix and make comparisons 
+# with other references
+rownames(perc.meth.thymus) <- paste0('cg_', methylation.filtered.united$start)
+
+
+# Let's rename the samples to be compatible with the bulk data
+# The original order: "C1","C2","C3","KO1","KO2","KO3","Tu1","Tu2","Tu3","AlkKO1","AlkKO2","AlkKO3"
+standard_name_thymus <- c("Thy_WT_1", "Thy_WT_2", "Thy_WT_3", 
+                     "Thy_KO_1", "Thy_KO_2", "Thy_KO_3",
+                     "Tumor_ALKpos_WT_1", "Tumor_ALKpos_WT_2", "Tumor_ALKpos_WT_3",
+                     "Thy_ALKpos_KO_1", "Thy_ALKpos_KO_2", "Thy_ALKpos_KO_3")
+                     
+colnames(perc.meth.thymus) <- standard_name_thymus
+
+#Finally I have the methylation level for each CpG and each sample
+summary(perc.meth.thymus)
+nrow(perc.meth.thymus)
+ncol(perc.meth.thymus)
+
+#Lets save the data in the final state.
+#save(perc.meth.thymus, file = "data_thymus/meth/methylation_thymus_12_samples.rData")
+#load(file = "data_thymus/meth/methylation_thymus_12_samples.rData")
+
+hist(perc.meth.thymus, main = 'Histogram Methylation')
+
+```
+Filtering of the methylation data
+```{r methylation.filters}
+
+#load(file = "data_thymus/meth/methylation_thymus_12_samples.rData")
+
+perc.meth.thymus.df <- data.frame(perc.meth.thymus)
+
+nrow(perc.meth.thymus.df) #34164
+
+# 1. filter rows with zero and ones
+perc.meth.thymus.df.filtered <- perc.meth.thymus.df %>% filter(rowSums(across(where(is.numeric)))!=0) # 33678 rows
+perc.meth.thymus.df.filtered <- perc.meth.thymus.df.filtered %>% filter(rowSums(across(where(is.numeric)))!=1) # 33678 rows
+
+# 2. filter rows with at least 1 zero: 28.296
+#perc.meth.thymus.df.filtered <- perc.meth.thymus.df.filtered[apply(perc.meth.thymus.df.filtered,1, function(x) all(x!=0)),]
+
+
+# 3. filter if four have zero 29.244
+#perc.meth.thymus.df.filtered <- perc.meth.thymus.df.filtered[apply(perc.meth.thymus.df.filtered,1, function(x) sum(x==0, na.rm=TRUE) < 4),]
+
+# 4.filtering of values iqual zero and values equal 1.
+perc.meth.thymus.df.filtered <- perc.meth.thymus.df.filtered[apply(perc.meth.thymus.df.filtered,1, function(x) sum(x==0, na.rm=TRUE) <= 0),] # 27.296 rows
+perc.meth.thymus.df.filtered <- perc.meth.thymus.df.filtered[apply(perc.meth.thymus.df.filtered,1, function(x) sum(x==1, na.rm=TRUE) <= 0),]# 8.042 rows
+```
+
+Let's take the marker genes for all the hierarchy.
+```{r filtering.marker.genes}
+
+#Adding top groups
+all_markers.thymus <- c(
+  #First the main leaf and the next level
+  rownames(deco.actual.data.thymus.results$deco_results_list$subcluster_level_1_leaf_1$result_deco_top_cluster$w),
+  rownames(deco.actual.data.thymus.results$deco_results_list$subcluster_level_1_leaf_1$deco_results_list$subcluster_level_2_leaf_1$result_deco_top_cluster$w),
+  rownames(deco.actual.data.thymus.results$deco_results_list$subcluster_level_1_leaf_1$deco_results_list$subcluster_level_2_leaf_2$result_deco_top_cluster$w),
+  
+  #After the another leaf that doesn't have more levels.
+  rownames(deco.actual.data.thymus.results$deco_results_list$subcluster_level_1_leaf_2$result_deco_top_cluster$w)
+)
+
+#Unique markers: 697
+all_markers.thymus <- unique(all_markers.thymus)
+length(all_markers.thymus)
+
+```
+
+
+## 7.1. Deconvolution with methylation.
+Now I will run the deconvolution with both: expression and methylation data
+One of the options it to fix the H proportion matrix.
+```{r oligo.decoflex.deconvolution.expression.methylation.reference.actual.data}
+
+#Replacing zeros and nulls with a small value.
+eset.thymus.bulk.sparse.df.filtered <- data.frame(as.matrix(eset.thymus.bulk.sparse@assayData$exprs))
+eset.thymus.bulk.sparse.df.filtered[is.na(eset.thymus.bulk.sparse.df.filtered)] <- 0.00000001
+eset.thymus.bulk.sparse.df.filtered[eset.thymus.bulk.sparse.df.filtered==0] <- 0.00000001
+
+#lets find the genes shared between single cell reference and bulk data
+inter.bulk.sc.thymus <- intersect(rownames(eset.thymus.bulk.sparse.df.filtered), 
+                                  rownames(reference_w.7.celltypes.thymus$basis.mvw)) 
+
+#697
+inter.bulk.sc.thymus.vs.markers <- intersect(inter.bulk.sc.thymus, all_markers.thymus)
+length(inter.bulk.sc.thymus.vs.markers)
+
+#Replacing zeros and nulls with a small value.
+perc.meth.thymus <- data.frame(perc.meth.thymus)
+perc.meth.thymus[is.na(perc.meth.thymus)] <- 0
+
+
+alpha_values <- c(0.001, 0.01, 0.1)
+
+start_time <- Sys.time()
+
+bulk_data_expr <- eset.thymus.bulk.sparse.df.filtered[inter.bulk.sc.thymus.vs.markers, standard_name_thymus]
+bulk_data_meth <- perc.meth.thymus[, standard_name_thymus]
+fixed_w <- data.frame(reference_w.7.celltypes.thymus$basis.mvw[inter.bulk.sc.thymus.vs.markers, ])
+
+grid_search_deco.dnmt1.ko.expr.meth.thymus <- run_grid_search(
+  bulk_data_methylation = data.frame(bulk_data_meth),
+  bulk_data_expression = data.frame(bulk_data_expr),
+  data_expression_auxiliary = NULL,
+  k = as.integer(7),
+  alpha_list = alpha_values, beta_list = NULL,
+  delta_threshold = 1e-10,
+  max_iterations = as.integer(10),
+  threads = as.integer(0),
+  fixed_h = data.frame(deco.actual.data.thymus.results$back_propagation_proportions_top_detailed),
+  fixed_w = fixed_w,
+  proportion_constraint_h = as.logical(TRUE), 
+  model_type = 'core_expression'
+  )
+
+#10 iterations: Time difference of 18.698 mins -> all genes
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## 7.1.1 Performance of the deconvolution
+TODO
+
+
+## 7.3. Correlation methylation and signature. It turned out that the shared genes are just 12, therefore correlation doesn't make sense in this case.
+```{r}
+#importing the external data
+library("readxl")
+methylation_data <- read_excel('data_thymus/external_references/DNA_methylation_data.xlsx', sheet = "means")
+
+cell_types_thymus.methylation <- c('CD4', 'CD8', 'B_cell', 'Mono', 'Granu')
+methylation_data_fixed <- data.frame(methylation_data[, c(cell_types_thymus.methylation, 'chromStart')])
+
+# Let's try the filtering, first counting and then keeping the uniques.
+# I need to improve this.
+library(dplyr)
+#95086
+methylation_data_fixed.counter <- methylation_data_fixed %>% dplyr::add_count(chromStart, name = "count_chromStart")
+
+#54,124
+methylation_data_filtered <- methylation_data_fixed.counter[methylation_data_fixed.counter$count_chromStart==1, c(cell_types_thymus.methylation, 'chromStart')]
+
+#I name the columns with the location
+rownames(methylation_data_filtered) <- paste0('cg_', methylation_data_filtered$chromStart)
+methylation_data_filtered <- methylation_data_filtered[, cell_types_thymus.methylation]
+
+#Convertion to double: 54124
+gene_methylation_data.fixed.temp <- sapply(methylation_data_filtered, as.numeric)
+rownames(gene_methylation_data.fixed.temp) <- rownames(methylation_data_filtered)
+
+# replace the NA by zeros: 54124
+gene_methylation_data.fixed <- data.frame(gene_methylation_data.fixed.temp) %>% mutate(across(everything(), .fns = ~replace_na(.,0))) 
+  
+
+#########################
+
+#let's choose the better model
+better_model.thymus <- choose_model_from_grid_search_object(grid_search_deco.dnmt1.ko.expr.meth.thymus, alpha = 0.001, beta=0)
+model.results.matrix.a.methylation.patterns <- better_model.thymus$a
+
+#######################
+
+# now let's calculate the shared CpGs: Only 12 are shared!! such a waste of time!!
+shared.cpg.methylation <- intersect(rownames(gene_methylation_data.fixed),
+                                    rownames(model.results.matrix.a.methylation.patterns))
+
+#shared
+length(shared.cpg.methylation)
+
+corr.methylation <- cor(x=gene_methylation_data.fixed[shared.cpg.methylation, ],
+    y=model.results.matrix.a.methylation.patterns[shared.cpg.methylation, ], 
+    method = 'pearson')
+
+corr.methylation
+
+```
+
+# 8. Complete deconvolution: expr, meth and Z matrix
+
+## 8.1. Creation of Z matrix
+
+Let's construct the auxiliary matrix corresponding to the Z matrix. During this research phase, we need to develop the following strategies:
+
+1. As each row represents a Gene and each column symbolizes a sample, it's necessary to summarize the methylation for each gene X Sample. The goal is to evaluate the methylation value within the vicinity of 100bp after the CpG.
+
+TODO: update all this part of the code to make the Z matrix expression core!
+
+```{r creation.auxiliary.matrix.expression.methylation.z.data, include=FALSE}
+
+# https://bioconductor.org/packages/release/data/annotation/html/FDb.InfiniumMethylation.hg19.html
+# https://bioconductor.org/packages/release/data/annotation/manuals/FDb.InfiniumMethylation.hg19/man/FDb.InfiniumMethylation.hg19.pdf
+
+# 1. First let's take the 450k methylation reference and ge tthe markers that we use in the deconvolution
+hm450 <- get450k()
+probenames <- c(markers_ovr)
+probes <- hm450[probenames]
+probes.df <- data.frame(ID_REF = names(probes), probes)
+
+#2. Now we get the TSS(transcriptional start site) related with those markers CpGs, meaning that we got the genes in the  neighborhood of the CpG 
+tss.list <- getNearestTSS(probes)
+tss.list.df <- data.frame(ID_REF = rownames(tss.list), tss.list)
+transcript.list <- getNearestTranscript(probes)
+transcript.list.df <- data.frame(ID_REF = rownames(transcript.list), transcript.list)
+
+expression_bulk_samples <- gene_exp_mixtures
+# 3. After I'm going to join the CpG information with the gene name.
+expression.data.filtered <- expression_bulk_samples[rownames(expression_bulk_samples) 
+                                                    %in% transcript.list.df$nearestGeneSymbol, ]
+expression.data.filtered.df <- data.frame(expression.data.filtered)
+expression.data.filtered.df$nearestGeneSymbol <- rownames(expression.data.filtered.df)
+expression.CpGs <- transcript.list.df %>% inner_join(expression.data.filtered.df, by="nearestGeneSymbol")
+
+#4. I found 430 over 500 CpGs. The initial idea will be to create NA values for the marker CpGs that I couldn't find.
+expression.CpGs.missing.values <- probes.df %>% left_join(expression.CpGs, by="ID_REF")
+rownames(expression.CpGs.missing.values) <- expression.CpGs.missing.values$ID_REF
+
+#5. I have the matrix that I will use in the deconvolution with Generalized Kullback Leibler convergence based on mutual information
+expression_bulk_samples.auxiliary <- expression.CpGs.missing.values[markers_ovr, colnames(expression_bulk_samples)]
+expression_bulk_samples.auxiliary[is.na(expression_bulk_samples.auxiliary)] <- 0.000001
+
+#6. Finally I have to scale from 0 to 1
+colMeans(expression_bulk_samples.auxiliary, na.rm = TRUE)
+library("scales")
+expression_bulk_samples.auxiliary.scaled <- apply(expression_bulk_samples.auxiliary, 2, rescale)
+colMeans(expression_bulk_samples.auxiliary.scaled, na.rm = TRUE)
+print(paste0('Rows: ', nrow(expression_bulk_samples.auxiliary.scaled),
+             ', Columns:', ncol(expression_bulk_samples.auxiliary.scaled)))
+
+#7. Let's replace the NAs values with a value almost 0 (1e20), however in the future the library has to be able to use the NA as advantage.
+expression_bulk_samples.auxiliary.scaled[is.na(expression_bulk_samples.auxiliary.scaled)] <- 0.000001
+```
+
+
+We can create an additional auxiliary matrix, Z, by incorporating the division of expression by methylation as a factor or score.
+```{r creation.auxiliary.matrix.expression.methylation.z.data.score, include=FALSE}
+# expression for nearest Gene of the CpG divided between methylation.
+expression_bulk_samples.auxiliary.score <- expression_bulk_samples.auxiliary/gene_exp_mixtures
+
+#Let's see if there are infinite or na values.
+which(is.infinite(as.matrix(expression_bulk_samples.auxiliary.score)))
+which(is.na(as.matrix(expression_bulk_samples.auxiliary.score)))
+```
+
+Additionally, we can create an auxiliary matrix, Z, that summarizes the information by calculating the expression divided by methylation as a factor or score. This calculation will be performed separately for cancer and normal samples to provide a consolidated summary.
+```{r creation.auxiliary.matrix.expression.methylation.z.data.summarizing}
+
+methylation.data <- data.frame(meth_mixtures)
+# expression for nearest Gene of the CpG divided between methylation.
+expression_bulk_samples.auxiliary.summ <- cbind(tumor = rowSums(expression_bulk_samples.auxiliary[1:200]),
+                                                normal = rowSums(expression_bulk_samples.auxiliary[201:300]))
+
+methylation.summ <- cbind(tumor = rowSums(methylation.data[1:200]),
+                                                normal = rowSums(methylation.data[201:300]))
+
+expression_bulk_samples.auxiliary.score.summ.tumor.normal <- expression_bulk_samples.auxiliary.summ/methylation.summ[rownames(expression_bulk_samples.auxiliary.summ),]
+
+#Let's see if there are infinite or na values.
+which(is.infinite(as.matrix(expression_bulk_samples.auxiliary.score.summ.tumor.normal)))
+which(is.na(as.matrix(expression_bulk_samples.auxiliary.score.summ.tumor.normal)))
+```
+
+
+## 8.2. Deconvolution
+
+We will calculate the B matrix using the Z matrix, incorporating the scores for all seven cell types 
+```{r decoflex.gridsearch.thymus.plus.z}
+
+#let's choose the better model
+better_model.thymus <- choose_model_from_grid_search_object(grid_search_deco.dnmt1.ko.expr.meth.thymus, alpha = 0.001, beta=0)
+
+#697 shared marker genes with the input
+inter.bulk.sc.thymus.vs.markers <- intersect(inter.bulk.sc.thymus, all_markers.thymus)
+length(inter.bulk.sc.thymus.vs.markers)
+
+#I got the actual proportions fixed for the best
+W_expression<- data.frame(reference_w.7.celltypes.thymus$basis.mvw[inter.bulk.sc.thymus.vs.markers, ])
+A_methylation <- data.frame(better_model.thymus$a)
+H_proportions <- data.frame(deco.actual.data.thymus.results$back_propagation_proportions_top_detailed)
+
+
+bulk_data_expr <- eset.thymus.bulk.sparse.df.filtered[inter.bulk.sc.thymus.vs.markers, standard_name_thymus]
+bulk_data_meth <- perc.meth.thymus[, standard_name_thymus]
+
+
+fixed_w <- data.frame(reference_w.7.celltypes.thymus$basis.mvw[inter.bulk.sc.thymus.vs.markers, ])
+
+alpha_values.list <- c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
+beta_values.list <-  c(0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1)
+
+start_time <- Sys.time()
+
+grid_search_deco.fixed.w.a.h.alpha.list.thymus <- run_grid_search(
+  bulk_data_expression = data.frame(bulk_data_expr[inter.bulk.sc.thymus.vs.markers,]),
+  bulk_data_methylation = data.frame(bulk_data_meth[,]),
+  data_expression_auxiliary = data.frame(expression_bulk_samples.auxiliary.score.thymus[,]),
+  k = 7,
+  alpha_list = alpha_values.list, 
+  beta_list = beta_values.list,
+  max_iterations = as.integer(iterations_small_models),
+  threads = 0,
+  delta_threshold=1e-10,
+  proportion_constraint_h = as.logical(TRUE),  
+  fixed_w = data.frame(W_expression),
+  fixed_a = data.frame(A_methylation), 
+  fixed_h = data.frame(H_proportions), 
+  model_type = 'core_expression'
+)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## 8.2.1. Performance of the deconvolution.
+
+## 8.3 Plot of B matrix: relation expression. -> methylation
+
+Now, we are prepared to visually examine both A matrices
+```{r  decoflex.gridsearch.thymus.plus.z.b.matrix.analysis, fig.width=20, fig.height=7}
+
+model.alpha.beta.op.thymus <- choose_model_from_grid_search_object(
+  grid_search_deco.fixed.w.a.h.alpha.list.thymus,
+  alpha = 0.00001, beta = 0.00001)
+
+list_pseudotime.thymus <- c('DN(P)', 'DN(Q)', 'DP(P)', 'DP(Q)', 'αβT(entry)', 'CD8+T', 'CD4+T')
+model.alpha.beta.op.thymus.b <- model.alpha.beta.op.thymus$b
+rownames(model.alpha.beta.op.thymus.b) <- list_pseudotime.thymus
+
+palette.v1 <- colorRampPalette(c("red", "black", "green"))(n = 1000)
+palette.v2 <- colorRampPalette(c("red", "green"))(n = 100)
+color_scheme <- redgreen(75)
+
+Colv  <- (as.matrix(model.alpha.beta.op.thymus.b)) %>% t %>% dist %>% hclust %>% as.dendrogram %>%
+   set("branches_k_color", k = 3) %>% set("branches_lwd", 1) %>%
+   rotate_DendSer(ser_weight = dist(t(x)))
+
+par(cex.main=1)
+gplots::heatmap.2((as.matrix(model.alpha.beta.op.thymus.b)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow =2, cexCol = 0.5, 
+                  dendrogram='column',     
+                  Rowv=FALSE,
+                  Colv=Colv,
+                  col = palette.v1,
+                  main = "Cell types vs samples: thymus")
+
+Colv  <- log(as.matrix(model.alpha.beta.op.thymus.b)) %>% t %>% dist %>% hclust %>% as.dendrogram %>%
+   set("branches_k_color", k = 4) %>% set("branches_lwd", 1) %>%
+   rotate_DendSer(ser_weight = dist(t(x)))
+
+par(cex.main=1)
+plot.1 <- gplots::heatmap.2(log(as.matrix(model.alpha.beta.op.thymus.b)),
+                  trace="none",
+                  margins=c(13,12), 
+                  cexRow = 2, cexCol = 0.5, 
+                  dendrogram='column',     
+                  Rowv=FALSE,
+                  Colv=Colv,
+                  col = palette.v2,
+                  main = "Cell types vs samples in thymus")
+print(plot.1$colDendrogram)
+
+
+Ltrs <- data.frame("A" = c(3,1), "B" = c(1,1), "C" = c(2,4), "D" = c(6,6))
+dend <- as.dendrogram(hclust(dist(t(Ltrs))))
+
+accumulator <- list();
+myleaves <- function(anode){
+    if(!is.list(anode))return(attr(anode,"label"))
+    accumulator[[length(accumulator)+1]] <<- (reduce(lapply(anode,myleaves),c))
+}
+
+myleaves(plot.1$colDendrogram)
+ret <- rev(accumulator)
+
+# partition_leaves(plot.1$colDendrogram)
+# plot.1$colDendrogram %>% get_nodes_attr("label")
+
+```
+
+#9 Extra analysis
+
+## 9.1. Correlation single cell expression data with external data
+
+```{r external.data.adquisition.expression}
+
+#importing the external data
+library("readxl")
+gene_expression_data <- read_excel('data_thymus/external_references/Gene_expression_data.xlsx', sheet = "means")
+
+inters.external.vs.bulk <- intersect(unique(gene_expression_data$geneName), rownames(bulk_data_expr))
+
+#assign the gene name as rownames: 18018
+gene_expression_data.filtered <- gene_expression_data[gene_expression_data$geneName %in% inters.external.vs.bulk,]
+
+#17918
+length(unique(gene_expression_data.filtered$geneName))
+
+# Remove duplicates by single column: 17918
+gene_expression_data.filtered.dedu <- gene_expression_data.filtered[!duplicated(gene_expression_data.filtered$geneName), ]
+rownames(gene_expression_data.filtered.dedu) <- gene_expression_data.filtered.dedu$geneName
+
+
+gene_expression_data.fixed <- data.frame(gene_expression_data.filtered.dedu[, c('CD4', 'CD8', 'B_cell', 'Mono', 'Granu')])
+rownames(gene_expression_data.fixed) <- gene_expression_data.filtered.dedu$geneName
+gene_expression_data.fixed.temp <- sapply(gene_expression_data.fixed, as.numeric)
+rownames(gene_expression_data.fixed.temp) <- rownames(gene_expression_data.fixed)
+
+# replace the NA by zeros.
+gene_expression_data.fixed <- data.frame(gene_expression_data.fixed.temp) %>% mutate(across(everything(), .fns = ~replace_na(.,0))) 
+gene_expression_data.fixed.df <- data.frame(gene_expression_data.fixed)
+
+
+#correlation between this and the single cell data.
+single_cell_ref.df <- data.frame( reference_w.7.celltypes.thymus$basis.mvw)
+single_cell_ref.df <- single_cell_ref.df[inters.external.vs.bulk,]
+single_cell_ref.df <- na.omit(single_cell_ref.df)
+
+```
+
+```{r corr.single.cell.external.expression}
+
+inters.external.vs.bulk <- intersect(rownames(gene_expression_data.fixed), rownames(single_cell_ref.df))
+
+# The whole set of genes: Bad results
+corr.expression <- cor(x=gene_expression_data.fixed[inters.external.vs.bulk, ],
+    y=single_cell_ref.df[inters.external.vs.bulk, ], 
+    method = 'pearson')
+gene_expression_data.fixed.df
+
+# Just the markers: zero correlation
+corr.expression.just.markers <- cor(x=gene_expression_data.fixed[inter.bulk.sc.thymus.vs.markers, ],
+    y=single_cell_ref.df[inter.bulk.sc.thymus.vs.markers, ], 
+    method = 'pearson')
+corr.expression.just.markers
+
+```
+
+
+

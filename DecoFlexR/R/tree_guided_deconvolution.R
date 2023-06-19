@@ -219,7 +219,7 @@ run_deconvolution_simulation_generic <- function(
     filter_markers = NULL,
     param.logfc.threshold = 2.0,
     param.p_val_adj = 0.05,
-    marker_strategy = NULL,
+    marker_strategy = 'keep_default_values',
     verbose = FALSE){
 
   # 1. calculate the simulated bulk data.
@@ -300,7 +300,7 @@ run_deconvolution_simulation_generic_recursive <- function(
     filter_markers = NULL,
     param.logfc.threshold = 2.0,
     param.p_val_adj = 0.05,
-    marker_strategy = NULL,
+    marker_strategy = 'keep_default_values',
     verbose = FALSE){
 
   # TODO: 0. Check the hierarchy object
@@ -315,6 +315,12 @@ run_deconvolution_simulation_generic_recursive <- function(
                                             sample = sample,
                                             ct.sub = NULL,
                                             verbose = verbose)
+
+  # First let's asign the column names (samples) again, just in case
+  # those start with a number; in that case R will add an X and everything
+  # will be wrong.
+  bulk_data.df <- data.frame(pseudo.bulk.data$pseudo_eset@assayData$exprs)
+  colnames(bulk_data.df) <- colnames(pseudo.bulk.data$pseudo_eset@assayData$exprs)
 
   # 2.Filter the original single cell data to have just the celltypes that are
   # needed for the process.
@@ -339,7 +345,7 @@ run_deconvolution_simulation_generic_recursive <- function(
   # Also the top_proportion is null since it is the first level of the tree.
   result_deco <- run_deconvolution_tree_guided_recursive(
     result_deco_top = NULL,
-    bulk_data = data.frame(pseudo.bulk.data$pseudo_eset@assayData$exprs),
+    bulk_data = bulk_data.df,
     true_proportions = true_proportions_parameter[,hierarchy$`1`$celltype_list],
     single_cell_data_exp = single_cell_data_exp,
     sub_clusters_var = sub_clusters_var,
@@ -408,6 +414,12 @@ run_deconvolution_simulation_generic_recursive <- function(
 #'  marker calculation. Default is 'wilcox'.
 #' @param marker_strategy An optional string representing the marker selection
 #'  strategy. If NULL (default), a default strategy is used.
+#' @param minimum_markers The minimum number of marker genes to be selected,
+#'  default is set to 4. This can be adjusted based on the analysis
+#'  requirements.
+#' @param min_delta_cor_threshold Minimum difference between the correlation of
+#'  t and t-1 steps. The idea is to skip genes that have small changes in
+#'  the correlation. For default it is a 5%.
 #' @param verbose A boolean indicating whether to print detailed messages during
 #'  the execution of the function. Default is FALSE.
 #'
@@ -435,11 +447,24 @@ run_deconvolution_tree_guided_recursive <- function(
     param.logfc.threshold = 2.0,
     param.p_val_adj = 0.05,
     test.use.value = 'wilcox',
-    marker_strategy = NULL,
+    marker_strategy = 'keep_default_values',
+    minimum_markers = 4,
+    min_delta_cor_threshold = 0.05,
     verbose = FALSE){
 
   message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
                  verbose))
+
+  # Let's begin with a basic validation about the samples names staring with #
+  current_columns <- unique(single_cell_data_exp[[sample]])
+  column_validation <- all(
+    unlist(lapply(current_columns,
+                  function(text) !grepl("^[[:digit:]]+", text))))
+  if(!column_validation){
+    stop(paste0('There are samples in the single cell data that start with a',
+    ' number. Please make sure that all samples start with a letter. Some R ',
+    'functionalities do not work with this kind of naming conventions.'))
+  }
 
   # Creation of the level name that I will use for the top deconvolution
   top_clusters_var <- paste0('metacluster_level_', hierarchy$tree_level)
@@ -489,6 +514,8 @@ run_deconvolution_tree_guided_recursive <- function(
     param.p_val_adj = param.p_val_adj,
     test.use.value = test.use.value,
     marker_strategy = marker_strategy,
+    minimum_markers = minimum_markers,
+    min_delta_cor_threshold = min_delta_cor_threshold,
     verbose = verbose)
 
   # 2.1. Assing the final markers and the top marker list
@@ -569,6 +596,8 @@ run_deconvolution_tree_guided_recursive <- function(
       top_clusters_list = top_clusters_list,
       param.logfc.threshold = param.logfc.threshold,
       param.p_val_adj = param.p_val_adj,
+      minimum_markers = minimum_markers,
+      min_delta_cor_threshold = min_delta_cor_threshold,
       verbose = verbose)
   }
 
@@ -660,6 +689,8 @@ run_deconvolution_tree_guided_recursive <- function(
         param.p_val_adj = param.p_val_adj,
         test.use.value = test.use.value,
         marker_strategy = marker_strategy,
+        minimum_markers = minimum_markers,
+        min_delta_cor_threshold = min_delta_cor_threshold,
         verbose = verbose)
 
     }else if(length(subclusters_list) == 1){
@@ -807,10 +838,14 @@ add_grouping_single_cell <- function(single_cell_data_exp,
 #'  threshold for marker genes. Default is 0.05.
 #' @param test.use.value A string specifying the test to use for marker gene
 #'  identification. Default is 'wilcox'.
-#' @param calculate_markers A character string specifying the strategy for
-#'  marker gene calculation. Default is ''.
 #' @param marker_strategy A character string specifying the overall strategy
 #'  for marker gene handling. Default is NULL.
+#' @param minimum_markers The minimum number of marker genes to be selected,
+#'  default is set to 4. This can be adjusted based on the analysis
+#'  requirements.
+#' @param min_delta_cor_threshold Minimum difference between the correlation of
+#'  t and t-1 steps. The idea is to skip genes that have small changes in
+#'  the correlation. For default it is a 5%.
 #' @param verbose A logical value indicating whether to print detailed output
 #'  during execution. Default is FALSE.
 #'
@@ -829,8 +864,9 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
                                           param.logfc.threshold = 2.0,
                                           param.p_val_adj = 0.05,
                                           test.use.value = 'wilcox',
-                                          calculate_markers = '',
-                                          marker_strategy = NULL,
+                                          marker_strategy = 'keep_default_values',
+                                          minimum_markers = 4,
+                                          min_delta_cor_threshold = 0.05,
                                           verbose = FALSE){
 
   if(verbose){
@@ -856,6 +892,8 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
     param.logfc.threshold = param.logfc.threshold,
     param.p_val_adj = param.p_val_adj,
     marker_strategy = marker_strategy,
+    minimum_markers = minimum_markers,
+    min_delta_cor_threshold = min_delta_cor_threshold,
     verbose = verbose)
 
   # 3.1. Assing the final markers and the top marker list
@@ -951,7 +989,9 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
       param.logfc.threshold = param.logfc.threshold,
       param.p_val_adj = param.p_val_adj,
       test.use.value = test.use.value,
-      calculate_markers = calculate_markers,
+      marker_strategy = marker_strategy,
+      minimum_markers = minimum_markers,
+      min_delta_cor_threshold = min_delta_cor_threshold,
       verbose = verbose)
 
     # 5.3.1. Assing the final markers and the top marker list
@@ -1050,6 +1090,12 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
 #'  threshold for marker genes. Default is 0.05.
 #' @param marker_strategy A character string specifying the overall strategy for
 #'  marker gene handling. Default is NULL.
+#' @param minimum_markers The minimum number of marker genes to be selected,
+#'  default is set to 4. This can be adjusted based on the analysis
+#'  requirements.
+#' @param min_delta_cor_threshold Minimum difference between the correlation of
+#'  t and t-1 steps. The idea is to skip genes that have small changes in
+#'  the correlation. For default it is a 5%.
 #' @param verbose A logical value indicating whether to print detailed output
 #'  during execution. Default is FALSE.
 #'
@@ -1064,6 +1110,8 @@ calculate_markers_level_intersection <- function(single_cell_data_exp,
                                                  param.logfc.threshold = 2.0,
                                                  param.p_val_adj = 0.05,
                                                  marker_strategy = NULL,
+                                                 minimum_markers = 4,
+                                                 min_delta_cor_threshold = 0.05,
                                                  verbose = FALSE){
   # 1. For each top cluster create the deconvolution for the subclusters
   # inside.
@@ -1103,6 +1151,8 @@ calculate_markers_level_intersection <- function(single_cell_data_exp,
         param.logfc.threshold = param.logfc.threshold,
         param.p_val_adj = param.p_val_adj,
         marker_strategy = marker_strategy,
+        minimum_markers = minimum_markers,
+        min_delta_cor_threshold = min_delta_cor_threshold,
         verbose =  verbose)
 
       # 1.3.1. Assing the final markers and the top marker list
@@ -1350,6 +1400,12 @@ aggregate_true_top_clustering_prop <- function(single_cell_data_exp,
 #' the analysis. NULL by default.
 #' @param marker_strategy Strategy used to select marker genes. This could be a
 #' specific algorithm or statistical method. NULL by default.
+#' @param minimum_markers The minimum number of marker genes to be selected,
+#'  default is set to 4. This can be adjusted based on the analysis
+#'  requirements.
+#' @param min_delta_cor_threshold Minimum difference between the correlation of
+#'  t and t-1 steps. The idea is to skip genes that have small changes in
+#'  the correlation. For default it is a 5%.
 #' @param verbose Logical value indicating whether to display additional
 #' information during the function's execution. Default is TRUE.
 #'
@@ -1380,7 +1436,9 @@ calculate_markers <- function(single_cell_data_exp,
                               param.p_val_adj = 0.05,
                               test.use.value = 'wilcox',
                               filter_markers = NULL,
-                              marker_strategy = NULL,
+                              marker_strategy = 'keep_default_values',
+                              minimum_markers = 4,
+                              min_delta_cor_threshold = 0.05,
                               verbose = TRUE){
 
   print(paste0('calculate_markers with verbose = ', verbose))
@@ -1392,6 +1450,8 @@ calculate_markers <- function(single_cell_data_exp,
     message('param.logfc.threshold: ', param.logfc.threshold)
     message('param.p_val_adj: ', param.p_val_adj)
     message('test.use.value: ', test.use.value)
+    message('minimum_markers: ', minimum_markers)
+    message('min_delta_cor_threshold: ', min_delta_cor_threshold)
   }
 
   # 1. Create seurat object
@@ -1457,19 +1517,15 @@ calculate_markers <- function(single_cell_data_exp,
 
       },
       error = function(e){
-        message(paste0('The FindMarker function is failing in the group: ',
+        # In case that the test in order to get markers doesn't reply any
+        # marker based on the threshold or another error.
+        warning(paste0('The FindMarker function is failing in the group: ',
                        group, '. The error is: ', e))
 
-        # In case that the test in order to get markers doesn't reply any
-        # marker based on the threshold.
-        if(e == paste0('Error in FindMarkers.default(object = data.use, ',
-                       'slot = data.slot, counts = counts, : No features pass ',
-                       'logfc.threshold threshold')){
-          message('FindMarker function result: No features pass ',
-                  'logfc.threshold threshold. Zero markers for these groups.')
+        if(!is.null(e)){
           markers.info <- data.frame()
         }else{
-          stop('Error running the FindMarkers function.')
+          stop('Error running the FindMarkers function.', e)
         }
       }
     )
@@ -1509,6 +1565,9 @@ calculate_markers <- function(single_cell_data_exp,
     # foldchange from biggest to smallest
     ordering_strategy <- 'pvalue_foldchange'
 
+    # Since arrange losses the rownames, I added it as columsn to fix the bug
+    markers.info$gene_name <- rownames(markers.info)
+
     if(ordering_strategy == 'pvalue_foldchange'){
 
       # 1a. Possible solution 1: first order by p-values and then for
@@ -1524,7 +1583,9 @@ calculate_markers <- function(single_cell_data_exp,
                                     (markers.info[[p_value_attribute]]))
     }
 
-    message(paste0('markergroup: ', 'markers_', group))
+    #Anyway, I return the gene names to the df after the arrange.
+    rownames(markers.info) <- markers.info$gene_name
+
 
     markers.info$group_name <- paste0('markers_', group)
 
@@ -1568,6 +1629,14 @@ calculate_markers <- function(single_cell_data_exp,
     if(verbose){
       message(paste0('Number of markers for the group: ', nrow(markers.info)))
     }
+  }
+
+  # 2.1. After calculating the markers, I will check if markers are zero
+  if(length(total_markers)==0){
+    stop('There are no marker genes identified for the current process. ',
+         'Please verify the value assigned to the parameter ',
+         '"param.logfc.threshold". If necessary, consider using a smaller ',
+         'value. The current value is: ', param.logfc.threshold)
   }
 
   # 3. Remove shared genes between clusters if there are shared markers and
@@ -1617,6 +1686,8 @@ calculate_markers <- function(single_cell_data_exp,
     total_markers <- calculate_min_correlation_incremental_markers(
       list_markers = list_markers,
       reference = reference,
+      minimum_markers = minimum_markers,
+      min_delta_cor_threshold = min_delta_cor_threshold,
       verbose = verbose)
   }
 
@@ -1680,7 +1751,7 @@ FindMarkers.proxy <- function(seurat.reference, group, rest_groups,
                               test.use.value = 'wilcox',
                               marker_strategy = 'keep_default_values',
                               max.size.percentage = 0.70,
-                              param.logfc.threshold = 2.0, verbose = FALSE){
+                              param.logfc.threshold = 2.0, verbose = TRUE){
 
   # Not supported test methods.
   if(test.use.value == 'roc' | test.use.value == 'DESeq2'){
@@ -1712,13 +1783,34 @@ FindMarkers.proxy <- function(seurat.reference, group, rest_groups,
     }
   }
 
-  markers.info.all <- Seurat::FindMarkers(seurat.reference,
-                                  ident.1 = group, ident.2 = rest_groups,
-                                  test.use = test.use.value,
-                                  max.cells.per.ident = max.cells.per.ident,
-                                  only.pos=TRUE,
-                                  logfc.threshold = param.logfc.threshold,
-                                  verbose = verbose)
+  if(verbose){
+    message('Seurat::FindMarkers -> ',
+            'ident.1 = group: ', group,
+            ' ident.2 = rest_groups: ', paste(shQuote(rest_groups), collapse=", "))
+  }
+
+  # Calling Seurat function
+  markers.info.all <-  NULL
+  tryCatch(
+    {
+      markers.info.all <- Seurat::FindMarkers(seurat.reference,
+                                              ident.1 = group, ident.2 = rest_groups,
+                                              test.use = test.use.value,
+                                              max.cells.per.ident = max.cells.per.ident,
+                                              only.pos=TRUE,
+                                              logfc.threshold = param.logfc.threshold,
+                                              verbose = verbose)
+
+      message('Group: ', group, ' vs rest_groups = ', length(markers.info.all))
+
+    },
+    error = function(e){
+      warning(paste0('The FindMarker function is failing in the group: ',
+                     group, '. The error is: ', e))
+
+      markers.info.all <- data.frame()
+    }
+  )
 
   if(marker_strategy == 'convert_inf_to_zero'){
     message('Executing convert_inf_to_zero strategy')
@@ -1750,6 +1842,9 @@ FindMarkers.proxy <- function(seurat.reference, group, rest_groups,
 #' @param minimum_markers The minimum number of marker genes to be selected,
 #'  default is set to 4. This can be adjusted based on the analysis
 #'  requirements.
+#' @param min_delta_cor_threshold Minimum difference between the correlation of
+#'  t and t-1 steps. The idea is to skip genes that have small changes in
+#'  the correlation. For default it is a 5%.
 #' @param verbose If TRUE, prints detailed information during the function
 #'  execution. Default is TRUE.
 #' @param verbose_detailed If TRUE, prints even more detailed information
@@ -1773,8 +1868,12 @@ calculate_min_correlation_incremental_markers <- function(
     list_markers,
     reference,
     minimum_markers = 4,
+    min_delta_cor_threshold = 0.05,
     verbose = TRUE,
     verbose_detailed =  TRUE){
+
+  message('min_delta_cor_threshold: ', min_delta_cor_threshold)
+  message('minimum_markers: ', minimum_markers)
 
   if(verbose){
     message('Begining of calculate_min_correlation_incremental_markers:')
@@ -1786,7 +1885,7 @@ calculate_min_correlation_incremental_markers <- function(
 
   # iteration on the list markers to calculate the maximum number of markers
   max.markers <- 0
-  for(marker_set in list_markers) {
+  for(marker_set in list_markers){
     number_markers <- nrow(marker_set)
     if(number_markers > max.markers){
       max.markers <- number_markers
@@ -1796,7 +1895,7 @@ calculate_min_correlation_incremental_markers <- function(
   # 2. Best value in terms of correlation with the reference. 1 is the worse
   # case scenario when everything is 100% correlated
   min_value <- 1
-  optimus_n_marker = -1
+  optimum_n_marker = -1
 
   # 3. I'm adding a marker each time and comparing the correlation between
   # samples
@@ -1814,6 +1913,24 @@ calculate_min_correlation_incremental_markers <- function(
         if(marker_count <= nrow(marker_set)){
           current_markers <- c(current_markers,
                                rownames(marker_set)[marker_count])
+
+          joint_cor <- 0
+          # Correlation has to be done with more than 1 genes.
+          if(length(current_markers)>=2){
+            # Calculating the joint correlation even if I added the gene anyways
+            joint_cor <- calculate_joint_cor(reference = reference,
+                                             markers = current_markers)
+          }
+
+          # Logging even when is based on the minimum_markers
+          if(verbose_detailed){
+            print(paste0(joint_cor, ', marker_count:',
+                         marker_count, ', ',
+                         names(list_markers)[couter_market_set],
+                         ', number_markers_added: ', length(current_markers),
+                         '. Gene added because: minimum_markers parameter.'))
+          }
+
         }
       }else{
         # To make sure we don't try to get values in a empty position.
@@ -1826,12 +1943,21 @@ calculate_min_correlation_incremental_markers <- function(
           # I can get a negative correlation, but it will be the minimum one.
           joint_cor <- abs(joint_cor)
 
+          # I calculate the delta correlation t-1
+          delta_correlation <- abs(min_value - joint_cor)
+
           # Getting the minimum value and the length of the marker vector when
           # that happen
-          # Also I need to check that this value is greater than zero.
-          if(min_value > joint_cor & joint_cor >= 0){
+          # Also I need to check that this value is greater than zero and
+          # if the current delta correlation between the t and t-1 is greater
+          # or equal than the min_delta_cor_threshold I can add the value.
+          if(min_value > joint_cor & joint_cor >= 0 &
+             delta_correlation >= min_delta_cor_threshold){
             min_value <- joint_cor
-            optimus_n_marker <- length(current_markers)
+            optimum_n_marker <- length(current_markers)
+            message('New optimum added with delta_correlation=',
+                    delta_correlation, ', min_delta_cor_threshold: ',
+                    min_delta_cor_threshold)
           }
 
           if(verbose_detailed){
@@ -1846,13 +1972,32 @@ calculate_min_correlation_incremental_markers <- function(
     }
   }
 
-  if(verbose){
-    print(paste0('Minimum value of average correlation: ',
-                 min_value, ' - optimus_n_marker: ', optimus_n_marker))
+  # In the case that the available markers is <<< than the minimum marker number
+  # In that case I used all the markers.
+  if(optimum_n_marker==-1 ){
+
+    # In case that the number of markers is >> than the minimum markers.
+    if(length(current_markers) > minimum_markers){
+      optimum_n_marker <- minimum_markers
+      message('There are not optimum marker since the minimum number of markers ',
+              'is: ', minimum_markers, ' which is << than the size of the  ',
+              'calculated markers: ', length(current_markers))
+    }else{
+      optimum_n_marker <- length(current_markers)
+      message('There are not optimum marker since the minimum number of markers ',
+              'is: ', minimum_markers, ' which is > than the size of the  ',
+              'calculated markers: ', length(current_markers))
+    }
   }
 
-  # 3. I have to return the optimus markers
-  return(current_markers[1:optimus_n_marker])
+  # Check the final results of the analysis
+  if(verbose){
+    print(paste0('Minimum value of average correlation: ',
+                 min_value, ' - optimum_n_marker: ', optimum_n_marker))
+  }
+
+  # 3. I have to return the optimum markers
+  return(current_markers[1:optimum_n_marker])
 }
 
 

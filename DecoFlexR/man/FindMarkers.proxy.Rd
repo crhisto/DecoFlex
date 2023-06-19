@@ -12,7 +12,7 @@
   marker_strategy = "keep_default_values",
   max.size.percentage = 0.7,
   param.logfc.threshold = 2,
-  verbose = FALSE
+  verbose = TRUE
 )
 }
 \arguments{

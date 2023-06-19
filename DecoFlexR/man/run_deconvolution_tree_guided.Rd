@@ -20,8 +20,9 @@ run_deconvolution_tree_guided(
   param.logfc.threshold = 2,
   param.p_val_adj = 0.05,
   test.use.value = "wilcox",
-  calculate_markers = "",
-  marker_strategy = NULL,
+  marker_strategy = "keep_default_values",
+  minimum_markers = 4,
+  min_delta_cor_threshold = 0.05,
   verbose = FALSE
 )
 }
@@ -71,11 +72,16 @@ threshold for marker genes. Default is 0.05.}
 \item{test.use.value}{A string specifying the test to use for marker gene
 identification. Default is 'wilcox'.}
 
-\item{calculate_markers}{A character string specifying the strategy for
-marker gene calculation. Default is ''.}
-
 \item{marker_strategy}{A character string specifying the overall strategy
 for marker gene handling. Default is NULL.}
+
+\item{minimum_markers}{The minimum number of marker genes to be selected,
+default is set to 4. This can be adjusted based on the analysis
+requirements.}
+
+\item{min_delta_cor_threshold}{Minimum difference between the correlation of
+t and t-1 steps. The idea is to skip genes that have small changes in
+the correlation. For default it is a 5\%.}
 
 \item{verbose}{A logical value indicating whether to print detailed output
 during execution. Default is FALSE.}

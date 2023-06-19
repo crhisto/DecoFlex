@@ -27,8 +27,9 @@ DecoFlexR is a versatile tool that uses a unique deconvolution method to parse O
 Before installing the `DecoFlex` package, there are several steps required to prepare your system with the necessary environments and dependencies. Follow the instructions below for the smooth installation of the `DecoFlex` package.
 
 1. Install the latest version of conda from the official website: [Conda Installation](https://docs.conda.io/projects/conda/en/23.3.x/user-guide/install/index.html)
-2. Create a new conda environment named 'r_DecoFlex' by running the following commands in your console:
 
+2. Initiate a new conda environment named 'r_DecoFlex' using the commands provided below in your console. It is advisable to use Python version 3.8 or above if your operating system is up-to-date. However, if your OS isn't the latest version, Python 3.7 would be a more suitable choice:
+   
    ```bash
    conda create -n r_DecoFlex python=3.9 anaconda
    conda activate r_DecoFlex
@@ -49,14 +50,30 @@ Before installing the `DecoFlex` package, there are several steps required to pr
    ```bash
    which conda
    ```
+   
+6. If you are working in a ubuntu linux OS-like, make sure you have installed the lib: libstdc++6: 
 
-6. Activate the environment in R and install the library replacing the `conda directory` and the vgithub_repository` path:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install libstdc++6
+   ```
+
+7. Make sure you have installed the following conda libraries: 
+
+   ```R
+   reticulate::py_install(envname="/home/ubuntu/miniconda3/envs/r_DecoFlex", packages="pyqtwebengine", pip=TRUE)
+   reticulate::py_install(envname="/home/ubuntu/miniconda3/envs/r_DecoFlex", packages="pyqt5", pip=TRUE)
+   ```
+
+8. Activate the environment in R and install the library replacing the `conda directory` and the `github_repository` path:
 
    ```R
    library(reticulate)
    reticulate::use_condaenv(condaenv = "r_DecoFlex", conda = "/Users/[username]/miniconda3/bin/conda")
    reticulate::py_install(packages="[github_repository]/NMMFlex/NMMFlexPy", pip=TRUE)
    ```
+   
+   Also change the directory miniconda3 if you installed anaconda3 instead.
 
 ## Additional Dependencies
 
@@ -362,6 +379,11 @@ run_grid_search(
 The function returns a list of results from the grid search. Each result contains the performance details of the model with different combinations of alpha and beta values.
 
 Check the function's documentation for a detailed description of each parameter and expected return. 
+
+### Notes and recommendations
+
+1. When preparing your references and bulk input data, ensure that sample names do not start with a numeric character. In certain scenarios, R prefixes the column names with 'X' when they start with a number, which can potentially lead to complications during the execution of procedures.
+2. If you encounter the error message: `There are no marker genes identified for the current process. Please verify the value assigned to the parameter 'logfc.threshold'. If necessary, consider using a smaller value. The current value is: xx.xx`, it suggests that you may need to adjust the `logfc.threshold` parameter. The default setting for this parameter is 2.0. Lowering the `logfc.threshold` value doesn't mean all genes beyond this threshold are included in the calculation. Rather, it widens the pool of genes that the algorithm can consider. The algorithm then identifies an optimal subset of these genes to minimize the correlation between samples."
 
 ## DecoFlexRData
 

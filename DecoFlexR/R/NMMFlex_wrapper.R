@@ -144,7 +144,7 @@ run_standard_deconvolution <- function(bulk_data_x,
 
   # 4. Print the parameters
   if(verbose){
-    message('NMMF parameters: ')
+    message('NMMFlex parameters: ')
     message(paste0('markers: ', length(markers)))
     message(paste0('max_iterations: ', max_iterations))
     message(paste0('k: ', k))
@@ -238,7 +238,6 @@ run_standard_deconvolution <- function(bulk_data_x,
 #' compatible.
 #' Raises an error if any of the parameter values are invalid or not in the
 #' expected range.
-#'
 #'
 #' @export
 run_complete_deconvolution <- function(x_matrix,
@@ -340,6 +339,9 @@ run_complete_deconvolution <- function(x_matrix,
 #'  is not fixed.
 #' @param fixed_b A matrix or NULL, Fixed matrix B. If NULL, it implies that B
 #'  is not fixed.
+#' @param model_type If the model is core expression or methylation, therefore
+#'  Y and X assignation are going to change.
+#'  Values: c('core_expression', 'core_methylation')
 #'
 #' @return A list of results from the grid search.
 #'
@@ -364,34 +366,57 @@ run_grid_search <- function(bulk_data_methylation,
                             regularize_w=NULL,
                             alpha_regularizer_w_list=NULL,
                             fixed_w=NULL, fixed_h=NULL,
-                            fixed_a=NULL, fixed_b=NULL){
+                            fixed_a=NULL, fixed_b=NULL,
+                            model_type){
 
   # 1. Let's try the deconvolution method library. Import the NMMFlex python
   # library
   NMMFlex <- import('NMMFlex')
   NMMFlex_grid_search <- NMMFlex$grid_search()
 
-  # 2. Call the function the runs the multiple deconvolution
-  deco_grid_search_result <- NMMFlex_grid_search$grid_search_parallelized_alpha_beta(
-    bulk_data_methylation=bulk_data_methylation,
-    bulk_data_expression=bulk_data_expression,
-    data_expression_auxiliary=data_expression_auxiliary,
-    k=as.integer(k),
-    alpha_list=alpha_list,
-    beta_list=beta_list,
-    delta_threshold=as.double(delta_threshold),
-    max_iterations=as.integer(max_iterations),
-    print_limit=as.integer(print_limit),
-    threads=as.integer(threads),
-    proportion_constraint_h=as.logical(proportion_constraint_h),
-    regularize_w=regularize_w,
-    alpha_regularizer_w_list=alpha_regularizer_w_list,
-    fixed_w=fixed_w,
-    fixed_h=fixed_h,
-    fixed_a=fixed_a,
-    fixed_b=fixed_b)
+  # 2. Initialization of
+  x_value <-  NULL
+  y_value <- NULL
 
-  # 3. We return the result of the deconvolution.
+  # 3. Depend on the core model, I send the methylation or the expression as
+  # core or as a secondary matrix.
+  if(model_type == 'core_methylation'){
+    x_value <-  bulk_data_methylation
+    y_value <- bulk_data_expression
+  }else if(model_type == 'core_expression'){
+    x_value <-  bulk_data_expression
+    y_value <- bulk_data_methylation
+  }else{
+    # To avoid problems in old code without the new parameter
+    stop(
+      "The 'model_type' variable holds an incorrect value. Please ensure that",
+      " it corresponds to either 'core_methylation' or 'core_expression' to ",
+      "signify the model type, which should be either methylation core or ",
+      "expression core. The current value is: ", model_type)
+  }
+
+  # 4. Call the function the runs the multiple deconvolution
+  deco_grid_search_result <-
+    NMMFlex_grid_search$grid_search_parallelized_alpha_beta(
+      bulk_data_methylation=x_value,
+      bulk_data_expression=y_value,
+      data_expression_auxiliary=data_expression_auxiliary,
+      k=as.integer(k),
+      alpha_list=alpha_list,
+      beta_list=beta_list,
+      delta_threshold=as.double(delta_threshold),
+      max_iterations=as.integer(max_iterations),
+      print_limit=as.integer(print_limit),
+      threads=as.integer(threads),
+      proportion_constraint_h=as.logical(proportion_constraint_h),
+      regularize_w=regularize_w,
+      alpha_regularizer_w_list=alpha_regularizer_w_list,
+      fixed_w=fixed_w,
+      fixed_h=fixed_h,
+      fixed_a=fixed_a,
+      fixed_b=fixed_b)
+
+  # 5. We return the result of the deconvolution.
   return(trans_grid_search_to_R(deco_grid_search_result))
 }
 

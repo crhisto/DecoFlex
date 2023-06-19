@@ -17,7 +17,9 @@ calculate_markers(
   param.p_val_adj = 0.05,
   test.use.value = "wilcox",
   filter_markers = NULL,
-  marker_strategy = NULL,
+  marker_strategy = "keep_default_values",
+  minimum_markers = 4,
+  min_delta_cor_threshold = 0.05,
   verbose = TRUE
 )
 }
@@ -66,6 +68,14 @@ the analysis. NULL by default.}
 
 \item{marker_strategy}{Strategy used to select marker genes. This could be a
 specific algorithm or statistical method. NULL by default.}
+
+\item{minimum_markers}{The minimum number of marker genes to be selected,
+default is set to 4. This can be adjusted based on the analysis
+requirements.}
+
+\item{min_delta_cor_threshold}{Minimum difference between the correlation of
+t and t-1 steps. The idea is to skip genes that have small changes in
+the correlation. For default it is a 5\%.}
 
 \item{verbose}{Logical value indicating whether to display additional
 information during the function's execution. Default is TRUE.}
