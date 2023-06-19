@@ -85,7 +85,8 @@ is conducted over the combinations of given alpha and beta values.</p>
 <span>  fixed_w <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  fixed_h <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  fixed_a <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  fixed_b <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  fixed_b <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  <span class="va">model_type</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -171,6 +172,12 @@ is not fixed.</p></dd>
 <dt>fixed_b</dt>
 <dd><p>A matrix or NULL, Fixed matrix B. If NULL, it implies that B
 is not fixed.</p></dd>
+
+
+<dt>model_type</dt>
+<dd><p>If the model is core expression or methylation, therefore
+Y and X assignation are going to change.
+Values: c('core_expression', 'core_methylation')</p></dd>
 
 </dl></div>
     <div id="value">

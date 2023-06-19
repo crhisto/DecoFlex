@@ -1,10 +1,10 @@
-pandoc: 3.1.2
+pandoc: 3.1.1
 pkgdown: 2.0.7
 pkgdown_sha: ~
 articles:
   DecoFlex_breast_cancer_methylation_core: DecoFlex_breast_cancer_methylation_core.html
   DecoFlex_thymus_tumor_NPM-ALK_expression_core: DecoFlex_thymus_tumor_NPM-ALK_expression_core.html
-last_built: 2023-06-13T13:56Z
+last_built: 2023-06-19T08:39Z
 urls:
   reference: https://crhisto.github.io/DecoFlex/reference
   article: https://crhisto.github.io/DecoFlex/articles

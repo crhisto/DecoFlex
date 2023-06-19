@@ -9,7 +9,12 @@ plot_deconvolution_performance_x_y_z_total(
   title_addition = "",
   alpha = NULL,
   beta = NULL,
-  scale_parameters = FALSE
+  scale_parameters = FALSE,
+  include_divergences_x_y_z = TRUE,
+  include_divergences = TRUE,
+  include_zoom = FALSE,
+  zoom_xlim_limits = c(0, 10),
+  include_title = TRUE
 )
 }
 \arguments{
@@ -26,6 +31,20 @@ default is NULL.}
 
 \item{scale_parameters}{Logical, whether to scale the y and z divergence
 values by the given alpha and beta. Optional, default is FALSE.}
+
+\item{include_divergences_x_y_z}{Logical. Indicates if the x, y and z
+divergences are showed in the plot. Optional, default is TRUE}
+
+\item{include_divergences}{Logical. Indicates if the divergence is showed
+in the plot. Optional, default is TRUE.}
+
+\item{include_zoom}{Logical. Indicates if the zoom component is included.
+Optional, default is FALSE.}
+
+\item{zoom_xlim_limits}{List with both limits to show the zoom: c(100, 1000)}
+
+\item{include_title}{Logical. Indicates if the title is added to the plot.
+Optional, default is TRUE.}
 }
 \value{
 A ggplot2 object representing the plot.
@@ -33,12 +52,15 @@ A ggplot2 object representing the plot.
 \description{
 This function plots detailed performance of the deconvolution with respect
 to x, y, z, and total divergence. If specified, the y and z divergence values
-can be scaled by the given alpha and beta parameters.
+can be scaled by the given alpha and beta parameters. Also you can see
+and additional zoom plot in a specific area.
 }
 \details{
 The function generates a line plot showing the log of the divergence values
 (for x, y, z, total, and delta) against iterations.
 The line color is specified according to the type of divergence.
 The divergence values for y and z can be scaled by the specified alpha and
-beta parameters if 'scale_parameters' is TRUE.
+beta parameters if 'scale_parameters' is TRUE. For more information about
+the zoom functionality:
+https://datavizpyr.com/how-to-zoom-in-on-a-plot-in-r/
 }

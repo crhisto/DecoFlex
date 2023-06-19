@@ -78,6 +78,8 @@ algorithm performance.</p>
 <span>  param.logfc.threshold <span class="op">=</span> <span class="fl">2</span>,</span>
 <span>  param.p_val_adj <span class="op">=</span> <span class="fl">0.05</span>,</span>
 <span>  marker_strategy <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  minimum_markers <span class="op">=</span> <span class="fl">4</span>,</span>
+<span>  min_delta_cor_threshold <span class="op">=</span> <span class="fl">0.05</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -117,6 +119,18 @@ threshold for marker genes. Default is 0.05.</p></dd>
 <dt>marker_strategy</dt>
 <dd><p>A character string specifying the overall strategy for
 marker gene handling. Default is NULL.</p></dd>
+
+
+<dt>minimum_markers</dt>
+<dd><p>The minimum number of marker genes to be selected,
+default is set to 4. This can be adjusted based on the analysis
+requirements.</p></dd>
+
+
+<dt>min_delta_cor_threshold</dt>
+<dd><p>Minimum difference between the correlation of
+t and t-1 steps. The idea is to skip genes that have small changes in
+the correlation. For default it is a 5%.</p></dd>
 
 
 <dt>verbose</dt>
