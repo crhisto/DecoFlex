@@ -174,7 +174,7 @@ run_standard_deconvolution <- function(bulk_data_x,
   end_time - start_time
 
   # 6. We return the result of the deconvolution.
-  return(deco_result)
+  return(trans_mult_deco_to_R(deco_result))
 }
 
 #' @title title Run Complete Deconvolution
@@ -300,7 +300,7 @@ run_complete_deconvolution <- function(x_matrix,
 
 
   # 3. We return the result of the deconvolution.
-  return(deco_result)
+  return(trans_mult_deco_to_R(deco_result))
 }
 
 #' @title Run Grid Search
@@ -392,5 +392,135 @@ run_grid_search <- function(bulk_data_methylation,
     fixed_b=fixed_b)
 
   # 3. We return the result of the deconvolution.
-  return(deco_grid_search_result)
+  return(trans_grid_search_to_R(deco_grid_search_result))
+}
+
+#' @title Translate Multiple Deconvolution Results to R object
+#'
+#' @description This function takes the output of a multiple deconvolution
+#' process and translates it into an R-friendly format, returning a list
+#' of all relevant results. The idea is to preserve the python data in the R
+#' allocated memory, otherwise under certain circumstance the object will be
+#' null.
+#'
+#' @param multiple_deconvolution_results A list, The result object returned 
+#' from a multiple deconvolution function.
+#'
+#' @return A list, with the following elements:
+#' @itemize{
+#'   \item "x", "y", "z": The original input matrices.
+#'   \item "x_hat", "y_hat", "z_hat": The estimated matrices after 
+#'   deconvolution.
+#'   \item "w", "h": The matrices of factor loadings and factor scores.
+#'   \item "a", "b": Additional matrices related to the deconvolution model.
+#'   \item "is_x_sparse", "is_y_sparse", "is_z_sparse", "is_model_sparse": 
+#'   Boolean values indicating if the corresponding matrices are sparse.
+#'   \item "initialized_w", "initialized_h", "initialized_a", "initialized_b": 
+#'   The initial values used for the corresponding matrices in the 
+#'   deconvolution process.
+#'   \item "iterations": The number of iterations performed during the 
+#'   deconvolution process.
+#'   \item "divergence_value", "delta_divergence_value": The final divergence 
+#'   value and the change in divergence in the last iteration.
+#'   \item "running_info": Additional information about the running process.
+#'   \item "alpha", "beta", "alpha_regularizer_w": The parameters used in the 
+#'   deconvolution model.
+#' }
+#'
+#' @details This function is designed to simplify the handling of multiple 
+#' deconvolution results by translating the returned object from Python into 
+#' an R-friendly format.
+#'
+#' @export
+trans_mult_deco_to_R <- function(multiple_deconvolution_results){
+  
+  return_list <- list(
+    'x' = multiple_deconvolution_results$x,
+    'y' = multiple_deconvolution_results$y,
+    'z' = multiple_deconvolution_results$z, 
+    
+    'x_hat' = multiple_deconvolution_results$x_hat,
+    'y_hat' = multiple_deconvolution_results$y_hat,
+    'z_hat' = multiple_deconvolution_results$z_hat,
+    
+    'w' = multiple_deconvolution_results$w,
+    'h' = multiple_deconvolution_results$h,
+    
+    'a' = multiple_deconvolution_results$a,
+    'b' = multiple_deconvolution_results$b,
+    
+    'is_x_sparse' = multiple_deconvolution_results$is_x_sparse,
+    'is_y_sparse' = multiple_deconvolution_results$is_y_sparse,
+    'is_z_sparse' = multiple_deconvolution_results$is_z_sparse,
+    'is_model_sparse' = multiple_deconvolution_results$is_model_sparse,
+    
+    'initialized_w' = multiple_deconvolution_results$initialized_w,
+    'initialized_h' = multiple_deconvolution_results$initialized_h,
+    'initialized_a' = multiple_deconvolution_results$initialized_a,
+    'initialized_b' = multiple_deconvolution_results$initialized_b,
+    
+    'iterations' = multiple_deconvolution_results$iterations,
+    'divergence_value' = multiple_deconvolution_results$divergence_value,
+    'delta_divergence_value' = 
+      multiple_deconvolution_results$delta_divergence_value,
+    'running_info' = multiple_deconvolution_results$running_info,
+    
+    'alpha' = multiple_deconvolution_results$alpha,
+    'beta' = multiple_deconvolution_results$beta,
+    'alpha_regularizer_w' = multiple_deconvolution_results$alpha_regularizer_w
+  )
+  
+  return(return_list)
+}
+
+#' @title Translate Grid Search Results to R
+#'
+#' @description This function takes the output of a grid search and translates 
+#' it into an R-friendly format, returning a list
+#' of all relevant results. It works by iterating over the grid search results,
+#' converting those into native R objects.The idea is to preserve the python 
+#' data in the R allocated memory, otherwise under certain circumstance the 
+#' object will be null.
+#'
+#' @param grid_search_result A list. This is the result object returned from a 
+#'  grid search process.
+#' @param verbose A logical. If TRUE, the function will print information about
+#'  the progress of the transformation for each model in the console. Default 
+#'  is FALSE.
+#'
+#' @return A list of all the elements contained in grid_search_result, 
+#'  transformed into an R-friendly format. Each element in the list corresponds
+#'  to a model from the grid search and is named "alpha_beta_" followed by the 
+#'  alpha and beta parameters of the model.
+#'
+#' @details This function is designed to simplify the handling of grid search 
+#' results by translating the returned objects from Python into an R-friendly 
+#' format. The function uses \code{trans_mult_deco_to_R()} to transform each 
+#' individual deconvolution result.
+#'
+#' @export
+trans_grid_search_to_R <- function(grid_search_result,
+                                   verbose = FALSE){
+  
+  #Iteration over the results, converting those to native R objects
+  return_list <- list()
+  for(i in 1:length(grid_search_result)){
+    if(verbose){
+      print(paste0('Model: ',i, '') )
+    }
+    
+    # Getting each model
+    object_deco <- grid_search_result[[i]]$get()
+    
+    # Transforming the object of the specific deconvolution.
+    object_deco_transformed <- trans_mult_deco_to_R(object_deco)
+    
+    # Adding it to the list.
+    return_list[[paste0('alpha_beta_',
+                        object_deco$alpha,
+                        '_',
+                        object_deco$beta)]] <- object_deco_transformed
+  }
+  
+  return(return_list)
 }

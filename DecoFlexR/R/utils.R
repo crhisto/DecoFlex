@@ -147,7 +147,7 @@ create_dataframe_results_multiple_deconvolutions <- function(grid_info,
       print(paste0('Model: ', i))
     }
 
-    object_deco <- grid_info[[i]]$get()
+    object_deco <- grid_info[[i]]
     performance_df <- rbind(performance_df,
                             c(object_deco$alpha,
                               object_deco$beta,
@@ -306,7 +306,8 @@ choose_model_from_grid_search_object <- function(grid_search_result,
 
   # let's plot model 0.001 and 1 beta and alpha 0.
   for(i in 1:length(grid_search_result)){
-    object_deco <- grid_search_result[[i]]$get()
+    print(paste0('Model: ',i, '') )
+    object_deco <- grid_search_result[[i]]
 
     if(object_deco$alpha==alpha && object_deco$beta==beta){
       return_object <- object_deco
@@ -405,7 +406,7 @@ plot_performance_for_each_model <- function(grid_search_result, alpha=NULL,
                                             scale_parameters = FALSE,
                                             save.pdf = FALSE, path.pdf = NULL){
   for(i in 1:length(grid_search_result)){
-    object_deco <- grid_search_result[[i]]$get()
+    object_deco <- grid_search_result[[i]]
 
     if(plot_type == 'summary'){
       plot_deco <- plot_deconvolution_performance(
@@ -452,7 +453,8 @@ plot_performance_for_each_model <- function(grid_search_result, alpha=NULL,
 #'
 #' This function plots detailed performance of the deconvolution with respect
 #' to x, y, z, and total divergence. If specified, the y and z divergence values
-#' can be scaled by the given alpha and beta parameters.
+#' can be scaled by the given alpha and beta parameters. Also you can see 
+#' and additional zoom plot in a specific area.
 #'
 #' @param running_info Data frame, the running information of the deconvolution.
 #' @param title_addition Character, an optional string to be added to the plot
@@ -463,18 +465,27 @@ plot_performance_for_each_model <- function(grid_search_result, alpha=NULL,
 #'  default is NULL.
 #' @param scale_parameters Logical, whether to scale the y and z divergence
 #'  values by the given alpha and beta. Optional, default is FALSE.
+#' @param include_divergences_x_y_z Logical. Indicates if the x, y and z 
+#'  divergences are showed in the plot. Optional, default is TRUE
+#' @param include_zoom Logical. Indicates if the zoom component is included. 
+#'  Optional, default is FALSE.
+#' @param zoom_xlim_limits List with both limits to show the zoom: c(100, 1000)
+#' @param include_title Logical. Indicates if the title is added to the plot. 
+#'  Optional, default is TRUE.
 #'
 #' @details
 #' The function generates a line plot showing the log of the divergence values
 #' (for x, y, z, total, and delta) against iterations.
 #' The line color is specified according to the type of divergence.
 #' The divergence values for y and z can be scaled by the specified alpha and
-#' beta parameters if 'scale_parameters' is TRUE.
+#' beta parameters if 'scale_parameters' is TRUE. For more information about
+#' the zoom functionality: 
+#' https://datavizpyr.com/how-to-zoom-in-on-a-plot-in-r/
 #'
 #' @return
 #' A ggplot2 object representing the plot.
 #'
-#' @import ggplot2
+#' @import ggplot2 tidyverse ggforce
 #' @importFrom ggplot2 .data
 #'
 #'
@@ -483,10 +494,15 @@ plot_deconvolution_performance_x_y_z_total <- function(
     running_info,
     title_addition = '',
     alpha=NULL, beta=NULL,
-    scale_parameters = FALSE){
-
+    scale_parameters = FALSE, 
+    include_divergences_x_y_z = TRUE,
+    include_divergences = TRUE, 
+    include_zoom = FALSE,
+    zoom_xlim_limits = c(0, 10),
+    include_title = TRUE){
+  
   running_info.df <- data.frame(running_info)
-
+  
   if(!is.null(alpha) && !is.null(beta) && scale_parameters){
     alpha_scale = alpha
     beta_scale = beta
@@ -495,46 +511,76 @@ plot_deconvolution_performance_x_y_z_total <- function(
     alpha_scale = 1
     beta_scale = 1
   }
-
-  colors_by_lines <- c("divergence_value"="black",
-                       "delta_divergence_value"="red",
-                       "divergence_value_x"="#377EB8",
-                       "divergence_value_y"="#4DAF4A",
-                       "divergence_value_z"="#984EA3")
-
+  
+  title <- "Iterations vs "
+  
+  colors_by_lines <- c("delta_divergence_value"="red")
+  
   # Solution for the error 'no visible binding for global variable' posted in:
   # https://www.r-bloggers.com/2019/08/no-visible-binding-for-global-variable/
   # and solved in https://stackoverflow.com/questions/9439256 using:
   # @importFrom ggplot2 .data, and the .data$ prefix.
-
-    # Plot with both metric included
-  ggplot2::ggplot(running_info.df, ggplot2::aes(x=.data$iteration)) +
-    ggplot2::geom_line(ggplot2::aes(y = log(.data$divergence_value_x),
-                  color = 'divergence_value_x'),
-              linetype = 'solid', size = 1) +
-    ggplot2::geom_line(ggplot2::aes(
-      y = log(.data$divergence_value_y * alpha_scale),
-      color = 'divergence_value_y'),
-      linetype = 'solid', size = 1) +
-    ggplot2::geom_line(ggplot2::aes(
-      y = log(.data$divergence_value_z * beta_scale),
-      color = 'divergence_value_z'),
-      linetype = 'solid', size = 1) +
-    ggplot2::geom_line(ggplot2::aes(
-      y = log(.data$divergence_value),
-      color = 'divergence_value'),
-      linetype = 'solid',  size = 0.3) +
+  
+  # Plot with both metric included
+  plot <- ggplot2::ggplot(running_info.df, ggplot2::aes(x=.data$iteration)) +
     ggplot2::geom_line(ggplot2::aes(
       y = log(.data$delta_divergence_value),
       color = 'delta_divergence_value'),
       linetype = 'solid', size = 0.3) +
-    ggplot2::scale_color_manual(name = "Metric", values=colors_by_lines) +
     ggplot2::ylab('log(metric)') +
     ggplot2::theme_bw() +
-    ggplot2::ggtitle(
-      paste0("Iterations vs log(divergence) and log(delta divergence)",
-             ' - ', title_addition)) +
     ggplot2::theme(plot.title = ggplot2::element_text(size=10))
+  
+  if(include_divergences_x_y_z){
+    plot <- plot + 
+      ggplot2::geom_line(ggplot2::aes(
+        y = log(.data$divergence_value_x),
+        color = 'divergence_value_x'),
+        linetype = 'solid', size = 1) +
+      ggplot2::geom_line(ggplot2::aes(
+        y = log(.data$divergence_value_y * alpha_scale),
+        color = 'divergence_value_y'),
+        linetype = 'solid', size = 1) +
+      ggplot2::geom_line(ggplot2::aes(
+        y = log(.data$divergence_value_z * beta_scale),
+        color = 'divergence_value_z'),
+        linetype = 'solid', size = 1)
+    
+    title <- paste0(title, 'log(divergence)')
+    
+    colors_by_lines <- c(colors_by_lines, 
+                         "divergence_value_x"="#377EB8",
+                         "divergence_value_y"="#4DAF4A",
+                         "divergence_value_z"="#984EA3")
+  }
+  
+  if(include_divergences){
+    plot <- plot + 
+      ggplot2::geom_line(ggplot2::aes(
+        y = log(.data$divergence_value),
+        color = 'divergence_value'),
+        linetype = 'solid',  size = 0.3)
+    
+    colors_by_lines <- c(colors_by_lines, 
+                         "divergence_value"="black")
+  }
+  
+  if(include_zoom){
+    plot <- plot + ggforce::facet_zoom(xlim = zoom_xlim_limits)
+  }
+  
+  title <- paste0(title, ' and log(delta divergence)')
+  
+  # Adding the title
+  if(include_title){
+    plot <- plot + ggplot2::ggtitle(paste0(title, ' - ', title_addition))
+  }
+  
+  #Adding color lines
+  plot <- plot +     
+    ggplot2::scale_color_manual(name = "Metric", values=colors_by_lines)
+
+  print(plot)
 }
 
 #' Calculate Sparseness of a Matrix
