@@ -227,6 +227,17 @@ run_standard_deconvolution <- function(bulk_data_x,
 #'  'random_based.uniform'.
 #' @param init_method_b A string, The initialization method for B. Default is
 #'  'random_based.uniform'.
+#' @param partial_w_fixed A matrix or NULL, The partial fixed matrix for W.
+#'  Default is NULL.
+#' @param partial_h_fixed A matrix or NULL, The partial fixed matrix for H.
+#'  Default is NULL.
+#' @param w_mask_fixed A matrix or NULL, A mask matrix for W defining the
+#'  positions that are fixed with TRUE values. Default is NULL.
+#' @param h_mask_fixed A matrix or NULL, A mask matrix for H defining the
+#'  positions that are fixed with TRUE values. Default is NULL.
+#' @param batches_partial_fixed An integer, Defines the number of batches
+#'  where the procedure will inject again the the partially fixed matrices.
+#'  Default is 1.
 #' @param verbose A logical, Whether to display progress messages during
 #'  deconvolution. Default is TRUE.
 #'
@@ -261,6 +272,11 @@ run_complete_deconvolution <- function(x_matrix,
                                        init_method_h='random_based.uniform',
                                        init_method_a='random_based.uniform',
                                        init_method_b='random_based.uniform',
+                                       partial_w_fixed=NULL,
+                                       partial_h_fixed=NULL,
+                                       w_mask_fixed=NULL,
+                                       h_mask_fixed=NULL,
+                                       batches_partial_fixed=1,
                                        verbose=TRUE){
 
   # 1. Let's try the deconvolution method library. Import the NMMFlex python
@@ -270,33 +286,37 @@ run_complete_deconvolution <- function(x_matrix,
 
   # 2. Call the function the runs the multiple deconvolution
   deco_result <- NMMFlex_factorization$run_deconvolution_multiple(
-    x_matrix=x_matrix,
-    y_matrix=y_matrix,
-    z_matrix=z_matrix,
-    k=as.integer(k),
-    gamma=as.double(gamma),
-    alpha=as.double(alpha),
-    beta=as.double(beta),
-    delta_threshold=as.double(delta_threshold),
-    max_iterations=as.integer(max_iterations),
-    print_limit=as.integer(print_limit),
-    proportion_constraint_h=as.logical(proportion_constraint_h),
-    regularize_w=regularize_w,
-    alpha_regularizer_w=alpha_regularizer_w,
-    fixed_w=fixed_w,
-    fixed_h=fixed_h,
-    fixed_a=fixed_a,
-    fixed_b=fixed_b,
-    initialized_w=initialized_w,
-    initialized_h=initialized_h,
-    initialized_a=initialized_a,
-    initialized_b=initialized_b,
-    init_method_w=init_method_w,
-    init_method_h=init_method_h,
-    init_method_a=init_method_a,
-    init_method_b=init_method_b,
-    verbose=as.logical(verbose))
-
+    x_matrix = x_matrix,
+    y_matrix = y_matrix,
+    z_matrix = z_matrix,
+    k = as.integer(k),
+    gamma = as.double(gamma),
+    alpha = as.double(alpha),
+    beta = as.double(beta),
+    delta_threshold = as.double(delta_threshold),
+    max_iterations = as.integer(max_iterations),
+    print_limit = as.integer(print_limit),
+    proportion_constraint_h = as.logical(proportion_constraint_h),
+    regularize_w = regularize_w,
+    alpha_regularizer_w = alpha_regularizer_w,
+    fixed_w = fixed_w,
+    fixed_h = fixed_h,
+    fixed_a = fixed_a,
+    fixed_b = fixed_b,
+    initialized_w = initialized_w,
+    initialized_h = initialized_h,
+    initialized_a = initialized_a,
+    initialized_b = initialized_b,
+    init_method_w = init_method_w,
+    init_method_h = init_method_h,
+    init_method_a = init_method_a,
+    init_method_b = init_method_b,
+    partial_w_fixed = partial_w_fixed,
+    partial_h_fixed = partial_h_fixed,
+    w_mask_fixed = w_mask_fixed,
+    h_mask_fixed = h_mask_fixed,
+    batches_partial_fixed = as.integer(batches_partial_fixed),
+    verbose = as.logical(verbose))
 
   # 3. We return the result of the deconvolution.
   return(trans_mult_deco_to_R(deco_result))
@@ -428,122 +448,122 @@ run_grid_search <- function(bulk_data_methylation,
 #' allocated memory, otherwise under certain circumstance the object will be
 #' null.
 #'
-#' @param multiple_deconvolution_results A list, The result object returned 
+#' @param multiple_deconvolution_results A list, The result object returned
 #' from a multiple deconvolution function.
 #'
 #' @return A list, with the following elements:
 #'   "x", "y", "z": The original input matrices.
-#'   "x_hat", "y_hat", "z_hat": The estimated matrices after 
+#'   "x_hat", "y_hat", "z_hat": The estimated matrices after
 #'    deconvolution.
 #'   "w", "h": The matrices of factor loadings and factor scores.
 #'   "a", "b": Additional matrices related to the deconvolution model.
-#'   "is_x_sparse", "is_y_sparse", "is_z_sparse", "is_model_sparse": 
+#'   "is_x_sparse", "is_y_sparse", "is_z_sparse", "is_model_sparse":
 #'    Boolean values indicating if the corresponding matrices are sparse.
-#'   "initialized_w", "initialized_h", "initialized_a", "initialized_b": 
-#'    The initial values used for the corresponding matrices in the 
+#'   "initialized_w", "initialized_h", "initialized_a", "initialized_b":
+#'    The initial values used for the corresponding matrices in the
 #'    deconvolution process.
-#'   "iterations": The number of iterations performed during the 
+#'   "iterations": The number of iterations performed during the
 #'    deconvolution process.
-#'   "divergence_value", "delta_divergence_value": The final divergence 
+#'   "divergence_value", "delta_divergence_value": The final divergence
 #'    value and the change in divergence in the last iteration.
 #'   "running_info": Additional information about the running process.
-#'   "alpha", "beta", "alpha_regularizer_w": The parameters used in the 
+#'   "alpha", "beta", "alpha_regularizer_w": The parameters used in the
 #'    deconvolution model.
 #'
-#' @details This function is designed to simplify the handling of multiple 
-#' deconvolution results by translating the returned object from Python into 
+#' @details This function is designed to simplify the handling of multiple
+#' deconvolution results by translating the returned object from Python into
 #' an R-friendly format.
 #'
 #' @export
 trans_mult_deco_to_R <- function(multiple_deconvolution_results){
-  
+
   return_list <- list(
     'x' = multiple_deconvolution_results$x,
     'y' = multiple_deconvolution_results$y,
-    'z' = multiple_deconvolution_results$z, 
-    
+    'z' = multiple_deconvolution_results$z,
+
     'x_hat' = multiple_deconvolution_results$x_hat,
     'y_hat' = multiple_deconvolution_results$y_hat,
     'z_hat' = multiple_deconvolution_results$z_hat,
-    
+
     'w' = multiple_deconvolution_results$w,
     'h' = multiple_deconvolution_results$h,
-    
+
     'a' = multiple_deconvolution_results$a,
     'b' = multiple_deconvolution_results$b,
-    
+
     'is_x_sparse' = multiple_deconvolution_results$is_x_sparse,
     'is_y_sparse' = multiple_deconvolution_results$is_y_sparse,
     'is_z_sparse' = multiple_deconvolution_results$is_z_sparse,
     'is_model_sparse' = multiple_deconvolution_results$is_model_sparse,
-    
+
     'initialized_w' = multiple_deconvolution_results$initialized_w,
     'initialized_h' = multiple_deconvolution_results$initialized_h,
     'initialized_a' = multiple_deconvolution_results$initialized_a,
     'initialized_b' = multiple_deconvolution_results$initialized_b,
-    
+
     'iterations' = multiple_deconvolution_results$iterations,
     'divergence_value' = multiple_deconvolution_results$divergence_value,
-    'delta_divergence_value' = 
+    'delta_divergence_value' =
       multiple_deconvolution_results$delta_divergence_value,
     'running_info' = multiple_deconvolution_results$running_info,
-    
+
     'alpha' = multiple_deconvolution_results$alpha,
     'beta' = multiple_deconvolution_results$beta,
     'alpha_regularizer_w' = multiple_deconvolution_results$alpha_regularizer_w
   )
-  
+
   return(return_list)
 }
 
 #' @title Translate Grid Search Results to R
 #'
-#' @description This function takes the output of a grid search and translates 
+#' @description This function takes the output of a grid search and translates
 #' it into an R-friendly format, returning a list
 #' of all relevant results. It works by iterating over the grid search results,
-#' converting those into native R objects.The idea is to preserve the python 
-#' data in the R allocated memory, otherwise under certain circumstance the 
+#' converting those into native R objects.The idea is to preserve the python
+#' data in the R allocated memory, otherwise under certain circumstance the
 #' object will be null.
 #'
-#' @param grid_search_result A list. This is the result object returned from a 
+#' @param grid_search_result A list. This is the result object returned from a
 #'  grid search process.
 #' @param verbose A logical. If TRUE, the function will print information about
-#'  the progress of the transformation for each model in the console. Default 
+#'  the progress of the transformation for each model in the console. Default
 #'  is FALSE.
 #'
-#' @return A list of all the elements contained in grid_search_result, 
+#' @return A list of all the elements contained in grid_search_result,
 #'  transformed into an R-friendly format. Each element in the list corresponds
-#'  to a model from the grid search and is named "alpha_beta_" followed by the 
+#'  to a model from the grid search and is named "alpha_beta_" followed by the
 #'  alpha and beta parameters of the model.
 #'
-#' @details This function is designed to simplify the handling of grid search 
-#' results by translating the returned objects from Python into an R-friendly 
-#' format. The function uses \code{trans_mult_deco_to_R()} to transform each 
+#' @details This function is designed to simplify the handling of grid search
+#' results by translating the returned objects from Python into an R-friendly
+#' format. The function uses \code{trans_mult_deco_to_R()} to transform each
 #' individual deconvolution result.
 #'
 #' @export
 trans_grid_search_to_R <- function(grid_search_result,
                                    verbose = FALSE){
-  
+
   #Iteration over the results, converting those to native R objects
   return_list <- list()
   for(i in 1:length(grid_search_result)){
     if(verbose){
       print(paste0('Model: ',i, '') )
     }
-    
+
     # Getting each model
     object_deco <- grid_search_result[[i]]$get()
-    
+
     # Transforming the object of the specific deconvolution.
     object_deco_transformed <- trans_mult_deco_to_R(object_deco)
-    
+
     # Adding it to the list.
     return_list[[paste0('alpha_beta_',
                         object_deco$alpha,
                         '_',
                         object_deco$beta)]] <- object_deco_transformed
   }
-  
+
   return(return_list)
 }

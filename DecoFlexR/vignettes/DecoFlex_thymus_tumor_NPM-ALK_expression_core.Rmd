@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r basic.configurations, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
@@ -23,10 +23,25 @@ Wi will refer to some code, documentation and plots from this: https://github.co
 
 This tutorial will cover the following content:
 
-
+```{r function.import.libraries}
+#Function to install and load libraries
+check_install_load_library <- function(library_name, type = 'BiocManager' ){
+  
+  if(type == 'BiocManager'){
+    if(library_name %in% rownames(installed.packages())){
+      library(library_name, character.only=TRUE)
+    }else{
+      BiocManager::install(library_name)
+      library(library_name, character.only=TRUE)
+    }
+  }
+  
+}
+```
 
 ```{r setup}
 library(DecoFlex)
+reticulate::py_install(envname="~/miniconda3/envs/r_DecoFlex", packages="/Users/crhisto/Documents/GitHub/NMMFlex/NMMFlexPy", pip=TRUE)
 ```
 
 TODO create function to install differents and load.
@@ -130,12 +145,13 @@ path.data <- paste0(getwd(), '/', 'data_thymus/')
 load(paste0(path.data, "eset.thymus.bulk.sparse.RData"))
 eset.thymus.bulk.sparse
 ```
-```{bash}
+
+```{bash installing.anndata}
 pip install anndata
 ```
 
 
-```{python}
+```{python convertion.h3ad}
 
 import anndata
 anndata
@@ -358,9 +374,9 @@ end_time <- Sys.time()
 end_time - start_time
 ```
 
-## 5.1. Simulation plots vs wt samples
+## 5.1. Actual proportions and correlation
 
-```{r}
+```{r actual.proportions.correlations}
 
 #Create pseudo 
 pseudo.bulk.data.thymus <- generateBulk_allcells(single_cell_data_exp,
@@ -418,7 +434,7 @@ cor(proportions_calculated_pseudo_bulk.df$sample_24W, real_proportion.pseudotime
 # 6. Deconvolution with manual hierarchy
 
 Now we will run the deconvolution with the actual bulk dataset from Thymus experiment.
-```{r}
+```{r deconvolution.manual.hierarchy}
 library(DecoFlex)
 
 #Replacing zeros and nulls with a small value.
@@ -449,10 +465,10 @@ deco.actual.data.thymus.results <-
                                           use_min_cor_strategy = use_min_cor_strategy, 
                                           delete_shared_level_markers = delete_shared_level_markers, 
                                           delete_shared_internal_markers = delete_shared_internal_markers,
-                                          param.logfc.threshold = 0.5, # 0.2
+                                          param.logfc.threshold = 0.4, # 0.2
                                           param.p_val_adj = 0.05,
                                           minimum_markers = 8,
-                                          min_delta_cor_threshold = 0.0, 
+                                          min_delta_cor_threshold = 0.10, 
                                           verbose = TRUE)
 # Time difference of 37.13297 mins 0.2, 00
 end_time <- Sys.time()
@@ -484,8 +500,12 @@ rowSums(real_proportion.pseudotime.rescaled)
 colnames(real_proportion.pseudotime.rescaled) <- list_pseudotime
 
 
-#wt data
+#wt data from deconvolution with tree hierarchy
 wt_data <- t(deco.actual.data.thymus.results$back_propagation_proportions_top_detailed[order_normalized, c('Thy_WT_1', 'Thy_WT_2', 'Thy_WT_3')])
+
+#wt data from flat configuration
+wt_data <- t(deco.actual.data.thymus.flat.results$back_propagation_proportions_top_detailed[order_normalized, c('Thy_WT_1', 'Thy_WT_2', 'Thy_WT_3')])
+
 wt_data <- data.frame(wt_data)
 colnames(wt_data) <- list_pseudotime
 
@@ -826,22 +846,6 @@ Let's construct the auxiliary matrix corresponding to the Z matrix. During this 
 1. In this dataset, each row corresponds to a gene, and each column represents a sample. It's essential to aggregate the methylation values for each gene-sample pair. The objective here is to assess the methylation value within each gene, along with an adjacent 1000 base pairs (bp) region preceding the CpG site. This preceding region, known as the promoter region, typically consists of a high concentration of CpG sites (forming CpG islands) and is the primary target for methylation.
 
 
-```{r function.import.libraries}
-#Function to install and load libraries
-check_install_load_library <- function(library_name, type = 'BiocManager' ){
-  
-  if(type == 'BiocManager'){
-    if(library_name %in% rownames(installed.packages())){
-      library(library_name, character.only=TRUE)
-    }else{
-      BiocManager::install(library_name)
-      library(library_name, character.only=TRUE)
-    }
-  }
-  
-}
-```
-
 Now I will create the first Z matrix without scaling
 ```{r creation.auxiliary.matrix.expression.methylation.z.data}
 check_install_load_library('BSgenome.Mmusculus.UCSC.mm10')
@@ -851,7 +855,7 @@ check_install_load_library("TxDb.Mmusculus.UCSC.mm10.knownGene")
 check_install_load_library("biovizBase")
 check_install_load_library("genomation")
 
-##################################
+###
 # let's check the genes
 
 # 1. I can also download the database as library.
@@ -1202,5 +1206,268 @@ corr.expression.just.markers
 
 ```
 
+# 10. Partial referenced model
 
+With this setup we want to fix one proportion line: 
+1. WT with the average values of single cell data.
+2. The first 7 cell-types, leaving one cell-type uncover and therefore possible to be optimized.
+
+## 10.1. Flat deconvolution 
+
+```{r hierarchy.creation.flat}
+#Binary hierarchy.
+hierarchical_clustering_sc_thymus.flat <- list(
+  '1'=list(tree_level=0, leaf_number=1, celltype_list=paste0('cluster_', c(8,9,10,11,28,4,3)), 
+           next_level_clustering=NULL
+  )
+)
+
+```
+
+Let's run first a deconvolution over the 7 cell-types without any extra configuration to extract marker genes.
+```{r flat.deconvolution.manual.hierarchy}
+library(DecoFlex)
+
+#Replacing zeros and nulls with a small value.
+eset.thymus.bulk.sparse.df.filtered <- data.frame(as.matrix(eset.thymus.bulk.sparse@assayData$exprs))
+eset.thymus.bulk.sparse.df.filtered[is.na(eset.thymus.bulk.sparse.df.filtered)] <- 0.00000001
+eset.thymus.bulk.sparse.df.filtered[eset.thymus.bulk.sparse.df.filtered==0] <- 0.00000001
+
+
+#Parameters for the simulation
+single_cell_data_exp <- eset.sc.thymus.4.sparse_fixed
+hierarchy = hierarchical_clustering_sc_thymus.flat$`1`
+bulk_data = eset.thymus.bulk.sparse.df.filtered
+sub_clusters_var <- 'cluster_normalized'
+sample <- 'age'
+use_min_cor_strategy = TRUE
+delete_shared_level_markers = FALSE
+delete_shared_internal_markers = FALSE
+
+start_time <- Sys.time()
+
+#let's run de simulation
+deco.actual.data.thymus.flat.results <- 
+  run_deconvolution_tree_guided_recursive(bulk_data = bulk_data,
+                                          single_cell_data_exp = single_cell_data_exp, 
+                                          hierarchy = hierarchy,
+                                          sub_clusters_var = sub_clusters_var,
+                                          sample = sample, 
+                                          use_min_cor_strategy = use_min_cor_strategy, 
+                                          delete_shared_level_markers = delete_shared_level_markers, 
+                                          delete_shared_internal_markers = delete_shared_internal_markers,
+                                          param.logfc.threshold = 0.4,
+                                          param.p_val_adj = 0.05,
+                                          minimum_markers = 4,
+                                          min_delta_cor_threshold = 0.0, 
+                                          verbose = TRUE)
+# Time difference of 37.13297 mins 0.2, 00
+end_time <- Sys.time()
+end_time - start_time
+```
+
+Now we need and differencial expression analysis over the bulk data to identify the up and down-regulated genes.
+```{r differential.expression.analysis.thymus}
+
+standard_name_thymus <- c("Thy_WT_1", "Thy_WT_2", "Thy_WT_3", 
+                     "Thy_KO_1", "Thy_KO_2", "Thy_KO_3",
+                     "Tumor_ALKpos_WT_1", "Tumor_ALKpos_WT_2", "Tumor_ALKpos_WT_3",
+                     "Thy_ALKpos_KO_1", "Thy_ALKpos_KO_2", "Thy_ALKpos_KO_3")
+
+countdata <- as.matrix(eset.thymus.bulk.sparse@assayData$exprs)
+countdata <- countdata[,standard_name_thymus]
+
+#I put numbers on it because other wise I wouldn't get  ko vs wt.
+type <- c("real_tumor","real_tumor","real_tumor",
+          "real_tumor","real_tumor","real_tumor",
+          "real_tumor","real_tumor","real_tumor",
+          "real_tumor","real_tumor","real_tumor")
+
+treatment <- c("Thy_WT","Thy_WT","Thy_WT",
+                 "Thy_KO","Thy_KO","Thy_KO",
+                 "Thy_ALKpos_WT","Thy_ALKpos_WT","Thy_ALKpos_WT",
+                 "Thy_ALKpos_KO","Thy_ALKpos_KO","Thy_ALKpos_KO"
+                 )
+
+time <- c("18w","18w","18w",
+          "18w","18w","18w",
+          "18w","18w","18w",
+          "18w","18w","18w")
+
+replicates  <- c("1","2","3",
+                 "1","2","3",
+                 "1","2","3",
+                 "1","2","3")
+
+#secondary information
+sample <- paste0("count_", 1:12)
+
+coldata <- as.data.frame(cbind(replicates, treatment, time, sample, type))
+rownames(coldata) <- NULL
+
+#building the object DESeqDataSet
+ddsFullCountTable <- DESeqDataSetFromMatrix(
+  countData = countdata,
+  colData = coldata,
+  design = ~treatment)
+
+#giving the order and setting the control sample for the analyisis, which is - in this case - the real Tumor_ALKpos_WT.
+ddsFullCountTable$treatment <- factor(ddsFullCountTable$treatment, levels = c("Thy_ALKpos_WT","Thy_WT", "Thy_KO", "Thy_ALKpos_KO"))
+
+  
+dds <- ddsFullCountTable
+
+## Pre-filter
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+
+## The rlog and variance stabilizing transformations => homoskedastic data
+rld <- rlog(dds, blind = FALSE)
+vsd <- vst(dds, blind = FALSE)
+dds <- estimateSizeFactors(dds)
+normalized.wt.bulk <- counts(dds, normalized=TRUE)
+
+dds <- DESeq(dds)
+resultsNames(dds)
+
+  
+RES.thymus.lfc <- list(Intercept = results(dds, name = "Intercept"),
+                       treatment_Thy_WT_vs_Thy_ALKpos_WT = results(dds, name = "treatment_Thy_WT_vs_Thy_ALKpos_WT"), 
+                         treatment_Thy_KO_vs_Thy_ALKpos_WT = results(dds, name = "treatment_Thy_KO_vs_Thy_ALKpos_WT"), 
+                         treatment_Thy_ALKpos_KO_vs_Thy_ALKpos_WT = results(dds, name = "treatment_Thy_ALKpos_KO_vs_Thy_ALKpos_WT"))
+
+
+RES.thymus.lfc
+
+
+#now lets check the genes that I should include
+select_markers_de <- function(de_object){
+  rownames(de_object[which(abs(de_object$log2FoldChange) >= 8 & de_object$padj <= 0.05),])
+}
+
+#236
+de_genes.thymus <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_WT_vs_Thy_ALKpos_WT),
+              select_markers_de(RES.thymus.lfc$treatment_Thy_KO_vs_Thy_ALKpos_WT),
+              select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_ALKpos_WT))
+
+#144. We hope that this will be enought to describe the missing celltype.
+de_genes.thymus <- unique(de_genes.thymus)
+
+```
+
+Let's put together the marker genes from the flat deconvolution and the differential expressed genes.
+```{r final.list.genes}
+
+
+#Let's create the w reference with all the genes and then we could see which are shared with the final_markers_partial_model
+# I don't use the one in the model becasue only has the marker genes in the reference and I need those  plus the Differential
+# expressed ons
+single_cell_data_exp <- eset.sc.thymus.4.sparse_fixed
+top_clusters_list = paste0('cluster_', c(8,9,10,11,28,4,3))
+bulk_data = eset.thymus.bulk.sparse.df.filtered
+sub_clusters_var <- 'cluster_normalized'
+sample <- 'age'
+
+w_matrix_reference <- decoflex_build_cell_reference(
+  x = single_cell_data_exp,
+  ct.sub = top_clusters_list,
+  ct.varname = sub_clusters_var,
+  sample = sample,
+  verbose = TRUE)
+
+# sorting the results by columns
+w_matrix_reference <- w_matrix_reference[, paste0('cluster_', c(8,9,10,11,28,4,3))]
+
+
+
+#172
+final_markers_partial_model <- c(de_genes.thymus, 
+                                 rownames(deco.actual.data.thymus.flat.results$result_deco_top_cluster$w))
+
+#172
+final_markers_partial_model <- unique(final_markers_partial_model)
+
+#57 (what???? why???)
+shared.final.vs.w <- intersect(final_markers_partial_model, rownames(as.matrix(w_matrix_reference$basis)))
+
+final_markers_partial_model <- shared.final.vs.w
+
+```
+
+
+Now we can create the partial references
+```{r creation.mask.matrices.h.w}
+
+# I have n genes as rows and m+1 columns, being the last one the unknown one. 
+mask_h <- matrix(FALSE, nrow = 8, ncol = 12)
+colnames(mask_h) <- standard_name_thymus
+rownames(mask_h) <- paste0('cluster_', c(8,9,10,11,28,4,3, 'unknown'))
+mask_h[1:7,1] <- TRUE
+
+
+#Now let's put the proportions that I needed, filling with zeros the rest
+partial_h_fixed <- matrix(0, nrow = 8, ncol = 12)
+colnames(partial_h_fixed) <- standard_name_thymus
+rownames(partial_h_fixed) <- paste0('cluster_', c(8,9,10,11,28,4,3, 'unknown'))
+#let's take the proportion
+proportions_wt_single_cell <- as.data.frame.matrix(deco.simulation.oligo.tree_guided.recursive.results$pseudo.bulk.data$truep) 
+proportions_wt_single_cell['sample_24W', paste0('cluster_', c(8,9,10,11,28,4,3)) ]
+partial_h_fixed[1:7,1] <- as.matrix(proportions_wt_single_cell['sample_24W', paste0('cluster_', c(8,9,10,11,28,4,3)) ])
+
+
+
+
+
+#Now I will create the W
+mask_w <- matrix(TRUE, nrow = length(final_markers_partial_model), ncol = 8)
+colnames(mask_w) <- paste0('cluster_', c(8,9,10,11,28,4,3, 'unknown'))
+rownames(mask_w) <- final_markers_partial_model
+mask_w[1:length(final_markers_partial_model), 8] <- FALSE
+
+# I have k cell-types rows by m samples. I want to add the same proportions to the first three wild-type samples corresponding to the 
+# '4W','8W','24W' time points
+partial_w_fixed <- matrix(0, nrow = length(final_markers_partial_model), ncol = 8)
+colnames(partial_w_fixed) <- paste0('cluster_', c(8,9,10,11,28,4,3, 'unknown'))
+rownames(partial_w_fixed) <- final_markers_partial_model
+
+#Let's filter the w matrix reference (partially)
+w_matrix_reference_basis_fixed <- as.data.frame(w_matrix_reference$basis)
+w_matrix_reference_basis_fixed <- w_matrix_reference_basis_fixed[final_markers_partial_model, ]
+
+partial_w_fixed[1:length(final_markers_partial_model), 1:7] <- as.matrix(w_matrix_reference_basis_fixed)
+
+```
+
+## 10.2. Running deconvolution with partial reference model
+
+Finally we can put together the model and run the partial conditioned deconvolution model to see if that work
+```{r flat.deconvolution.partial.references}
+
+#Replacing zeros and nulls with a small value.
+eset.thymus.bulk.sparse.df.filtered <- data.frame(as.matrix(eset.thymus.bulk.sparse@assayData$exprs))
+eset.thymus.bulk.sparse.df.filtered[is.na(eset.thymus.bulk.sparse.df.filtered)] <- 0.00000001
+eset.thymus.bulk.sparse.df.filtered[eset.thymus.bulk.sparse.df.filtered==0] <- 0.00000001
+
+start_time <- Sys.time()
+
+# I run the deconvolution without any other parameter
+deco.alpha.beta.zero.results <- run_complete_deconvolution(
+  x_matrix = data.frame(eset.thymus.bulk.sparse.df.filtered[final_markers_partial_model, standard_name_thymus]),
+  y_matrix = NULL,
+  z_matrix = NULL,
+  k = 8,
+  alpha = 0, 
+  beta = 0,
+  delta_threshold=1e-10, 
+  max_iterations=10000, 
+  #I have to deactivate the sum 1 because that is just for the 7 cell types
+  proportion_constraint_h = FALSE,
+  partial_w_fixed=data.frame(partial_w_fixed[final_markers_partial_model, ]),
+  partial_h_fixed=data.frame(partial_h_fixed),
+  w_mask_fixed=data.frame(mask_w),
+  h_mask_fixed=data.frame(mask_h),
+  batches_partial_fixed=1)
+
+end_time <- Sys.time()
+end_time - start_time
+```
 

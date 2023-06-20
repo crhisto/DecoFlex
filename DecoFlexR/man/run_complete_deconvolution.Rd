@@ -30,6 +30,11 @@ run_complete_deconvolution(
   init_method_h = "random_based.uniform",
   init_method_a = "random_based.uniform",
   init_method_b = "random_based.uniform",
+  partial_w_fixed = NULL,
+  partial_h_fixed = NULL,
+  w_mask_fixed = NULL,
+  h_mask_fixed = NULL,
+  batches_partial_fixed = 1,
   verbose = TRUE
 )
 }
@@ -97,6 +102,22 @@ NULL.}
 
 \item{init_method_b}{A string, The initialization method for B. Default is
 'random_based.uniform'.}
+
+\item{partial_w_fixed}{A matrix or NULL, The partial fixed matrix for W.
+Default is NULL.}
+
+\item{partial_h_fixed}{A matrix or NULL, The partial fixed matrix for H.
+Default is NULL.}
+
+\item{w_mask_fixed}{A matrix or NULL, A mask matrix for W defining the
+positions that are fixed with TRUE values. Default is NULL.}
+
+\item{h_mask_fixed}{A matrix or NULL, A mask matrix for H defining the
+positions that are fixed with TRUE values. Default is NULL.}
+
+\item{batches_partial_fixed}{An integer, Defines the number of batches
+where the procedure will inject again the the partially fixed matrices.
+Default is 1.}
 
 \item{verbose}{A logical, Whether to display progress messages during
 deconvolution. Default is TRUE.}
