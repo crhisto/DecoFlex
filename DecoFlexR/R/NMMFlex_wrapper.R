@@ -238,6 +238,24 @@ run_standard_deconvolution <- function(bulk_data_x,
 #' @param batches_partial_fixed An integer, Defines the number of batches
 #'  where the procedure will inject again the the partially fixed matrices.
 #'  Default is 1.
+#' @param constraint_type_w : str, optional
+#'  Type of constraint to apply to the w Matrix during
+#'  deconvolution depending on the data used.
+#'  Possible values are: 'sigmoid', 'power', 'exp', 'zero_one', or
+#'  None. If None, no constraint is applied.
+#' @param constraint_value_w : float or None, optional
+#'  The value to use for the constraint on the w Matrix.
+#'  If None and constraint_type_w is not None, a default value will
+#'  be used.
+#' @param constraint_type_a : str, optional
+#'  Type of constraint to apply to the A Matrix during
+#'  deconvolution depending on the data used.
+#'  Possible values are: 'sigmoid', 'power', 'exp', 'zero_one', or
+#'  None. If None, no constraint is applied.
+#' @param constraint_value_a : float or None, optional
+#'  The value to use for the constraint on the A Matrix.
+#'  If None and constraint_type_a is not None, a default value
+#'  will be used.
 #' @param verbose A logical, Whether to display progress messages during
 #'  deconvolution. Default is TRUE.
 #'
@@ -277,6 +295,10 @@ run_complete_deconvolution <- function(x_matrix,
                                        w_mask_fixed=NULL,
                                        h_mask_fixed=NULL,
                                        batches_partial_fixed=1,
+                                       constraint_type_w=NULL,
+                                       constraint_value_w=NULL,
+                                       constraint_type_a=NULL,
+                                       constraint_value_a=NULL,
                                        verbose=TRUE){
 
   # 1. Let's try the deconvolution method library. Import the NMMFlex python
@@ -316,6 +338,10 @@ run_complete_deconvolution <- function(x_matrix,
     w_mask_fixed = w_mask_fixed,
     h_mask_fixed = h_mask_fixed,
     batches_partial_fixed = as.integer(batches_partial_fixed),
+    constraint_type_w=constraint_type_w,
+    constraint_value_w=constraint_value_w,
+    constraint_type_a=constraint_type_a,
+    constraint_value_a=constraint_value_a,
     verbose = as.logical(verbose))
 
   # 3. We return the result of the deconvolution.
@@ -359,6 +385,24 @@ run_complete_deconvolution <- function(x_matrix,
 #'  is not fixed.
 #' @param fixed_b A matrix or NULL, Fixed matrix B. If NULL, it implies that B
 #'  is not fixed.
+#' @param constraint_type_w : str, optional
+#'  Type of constraint to apply to the w Matrix during
+#'  deconvolution depending on the data used.
+#'  Possible values are: 'sigmoid', 'power', 'exp', 'zero_one', or
+#'  None. If None, no constraint is applied.
+#' @param constraint_value_w : float or None, optional
+#'  The value to use for the constraint on the w Matrix.
+#'  If None and constraint_type_w is not None, a default value will
+#'  be used.
+#' @param constraint_type_a : str, optional
+#'  Type of constraint to apply to the A Matrix during
+#'  deconvolution depending on the data used.
+#'  Possible values are: 'sigmoid', 'power', 'exp', 'zero_one', or
+#'  None. If None, no constraint is applied.
+#' @param constraint_value_a : float or None, optional
+#'  The value to use for the constraint on the A Matrix.
+#'  If None and constraint_type_a is not None, a default value
+#'  will be used.
 #' @param model_type If the model is core expression or methylation, therefore
 #'  Y and X assignation are going to change.
 #'  Values: c('core_expression', 'core_methylation')
@@ -387,6 +431,10 @@ run_grid_search <- function(bulk_data_methylation,
                             alpha_regularizer_w_list=NULL,
                             fixed_w=NULL, fixed_h=NULL,
                             fixed_a=NULL, fixed_b=NULL,
+                            constraint_type_w=NULL,
+                            constraint_value_w=NULL,
+                            constraint_type_a=NULL,
+                            constraint_value_a=NULL,
                             model_type){
 
   # 1. Let's try the deconvolution method library. Import the NMMFlex python
@@ -434,7 +482,11 @@ run_grid_search <- function(bulk_data_methylation,
       fixed_w=fixed_w,
       fixed_h=fixed_h,
       fixed_a=fixed_a,
-      fixed_b=fixed_b)
+      fixed_b=fixed_b,
+      constraint_type_w=constraint_type_w,
+      constraint_value_w=constraint_value_w,
+      constraint_type_a=constraint_type_a,
+      constraint_value_a=constraint_value_a)
 
   # 5. We return the result of the deconvolution.
   return(trans_grid_search_to_R(deco_grid_search_result))
