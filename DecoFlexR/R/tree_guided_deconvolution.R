@@ -475,6 +475,37 @@ run_deconvolution_tree_guided_recursive <- function(
             ', strategy: ', use_min_cor_strategy)
   }
 
+  #-1. Checking the parameters in the object to locally use it
+  param.logfc.threshold.use <- param.logfc.threshold
+  if(!is.null(hierarchy$parameters$param.logfc.threshold)){
+    param.logfc.threshold.use <- hierarchy$parameters$param.logfc.threshold
+    message('Using param.logfc.threshold from object hierarchy: ',
+            param.logfc.threshold)
+  }
+
+  param.p_val_adj.use <- param.p_val_adj
+  if(!is.null(hierarchy$parameters$param.p_val_adj)){
+    param.p_val_adj.use <- hierarchy$parameters$param.p_val_adj
+    message('Using param.p_val_adj from object hierarchy: ',
+            param.p_val_adj.use)
+  }
+
+  minimum_markers.use <- minimum_markers
+  if(!is.null(hierarchy$parameters$minimum_markers)){
+    minimum_markers.use <- hierarchy$parameters$minimum_markers
+    message('Using minimum_markers from object hierarchy: ',
+            minimum_markers)
+  }
+
+  min_delta_cor_threshold.use <- min_delta_cor_threshold
+  if(!is.null(hierarchy$parameters$min_delta_cor_threshold)){
+    min_delta_cor_threshold.use <- hierarchy$parameters$min_delta_cor_threshold
+    message('Using min_delta_cor_threshold from object hierarchy: ',
+            min_delta_cor_threshold)
+  }
+
+
+
   # 0. Create the top clustering on the dataset in a given variable or in the
   # final configuration if next_level_clustering is NULL
   if(!is.null(hierarchy$next_level_clustering)){
@@ -510,12 +541,12 @@ run_deconvolution_tree_guided_recursive <- function(
     use_min_cor_strategy = use_min_cor_strategy,
     delete_shared_internal_markers = delete_shared_internal_markers,
     filter_markers = filter_markers,
-    param.logfc.threshold = param.logfc.threshold,
-    param.p_val_adj = param.p_val_adj,
+    param.logfc.threshold = param.logfc.threshold.use,
+    param.p_val_adj = param.p_val_adj.use,
     test.use.value = test.use.value,
     marker_strategy = marker_strategy,
-    minimum_markers = minimum_markers,
-    min_delta_cor_threshold = min_delta_cor_threshold,
+    minimum_markers = minimum_markers.use,
+    min_delta_cor_threshold = min_delta_cor_threshold.use,
     verbose = verbose)
 
   # 2.1. Assing the final markers and the top marker list
@@ -594,10 +625,10 @@ run_deconvolution_tree_guided_recursive <- function(
       top_clusters_var = top_clusters_var,
       sub_clusters_var = sub_clusters_var,
       top_clusters_list = top_clusters_list,
-      param.logfc.threshold = param.logfc.threshold,
-      param.p_val_adj = param.p_val_adj,
-      minimum_markers = minimum_markers,
-      min_delta_cor_threshold = min_delta_cor_threshold,
+      param.logfc.threshold = param.logfc.threshold.use,
+      param.p_val_adj = param.p_val_adj.use,
+      minimum_markers = minimum_markers.use,
+      min_delta_cor_threshold = min_delta_cor_threshold.use,
       verbose = verbose)
   }
 
@@ -685,12 +716,12 @@ run_deconvolution_tree_guided_recursive <- function(
         delete_shared_level_markers = delete_shared_level_markers,
         delete_shared_internal_markers = delete_shared_internal_markers,
         filter_markers = filter_markers,
-        param.logfc.threshold = param.logfc.threshold,
-        param.p_val_adj = param.p_val_adj,
+        param.logfc.threshold = param.logfc.threshold.use,
+        param.p_val_adj = param.p_val_adj.use,
         test.use.value = test.use.value,
         marker_strategy = marker_strategy,
-        minimum_markers = minimum_markers,
-        min_delta_cor_threshold = min_delta_cor_threshold,
+        minimum_markers = minimum_markers.use,
+        min_delta_cor_threshold = min_delta_cor_threshold.use,
         verbose = verbose)
 
     }else if(length(subclusters_list) == 1){
