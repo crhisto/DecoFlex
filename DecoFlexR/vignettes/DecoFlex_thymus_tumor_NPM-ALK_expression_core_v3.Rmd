@@ -1,0 +1,94 @@
+---
+title: "R Notebook V3"
+output: html_notebook
+---
+
+
+
+We will use the data from the paper [Single-cell transcriptomics of 20 mouse organs creates a Tabula Muris
+](https://www.nature.com/articles/s41586-018-0590-4) to deconvolution the main cell types in the thymus.
+
+```{r importing.data.FACS}
+
+#Create Seurat object based on counts
+# I get all the columns for all tisue samples for all experiments.
+path.data.sc <- '/Users/crhisto/Google Drive/PHD_PROJECT/UNIVERSITY/033_third_gerda_collaboration/papers/data/5829687_v2/'
+thymus.counts <- read.table(paste0(path.data.sc, "FACS/Thymus-counts.csv"), 
+                 header = TRUE,
+                 row.names = 1,
+                 sep = ",")
+
+
+annotations_FACS <- read.table(paste0(path.data.sc, "annotations_FACS.csv"), 
+                 header = TRUE,
+                 sep = ",")
+
+#thymus
+annotations_FACS.thymus <- annotations_FACS[annotations_FACS$tissue == 'Thymus',]
+unique(annotations_FACS.thymus$cell_ontology_class)
+unique(annotations_FACS.thymus$free_annotation)
+
+annotations_FACS.t_cells <- annotations_FACS[annotations_FACS$cell_ontology_class == 'T cell',]
+unique(annotations_FACS.t_cells$tissue)
+unique(annotations_FACS.t_cells$tissue)
+
+
+View(annotations_FACS.thymus)
+metadata_FACS <- read.table(paste0(path.data.sc, "metadata_FACS.csv"), 
+                 header = TRUE,
+                 sep = ",")
+
+```
+
+```{r importing.data.droples}
+path.data.sc.droplet <- '/Users/crhisto/Google Drive/PHD_PROJECT/UNIVERSITY/033_third_gerda_collaboration/papers/data/5968960_microfluid_v2/'
+
+droplet.thymus.expression_matrix <- Read10X(data.dir = paste0(path.data.sc.droplet, 'droplet/Thymus-10X_P7_11/'))
+seurat_object.thymus = CreateSeuratObject(counts = droplet.thymus.expression_matrix)
+seurat_object.thymus$orig.ident
+
+annotations_droplet <- read.table(paste0(path.data.sc.droplet, "annotations_droplet.csv"), 
+                 header = TRUE,
+                 sep = ",")
+
+annotations_droplet.thymus <- annotations_droplet[annotations_droplet$tissue == 'Thymus',]
+unique(annotations_droplet.thymus$cell_ontology_class)
+unique(annotations_droplet.thymus$free_annotation)
+
+annotations_droplet.t_cells <- annotations_droplet[annotations_droplet$cell_ontology_class == 'T cell',]
+
+```
+
+
+
+
+```{r libraries}
+library(Seurat)
+```
+
+
+```{r importing.seurat.objects}
+path_seurat_objects <- '/mnt_volumen/mnt/datasets/public/thymus/data/'
+
+load(paste0(path_seurat_objects, 'droplet_Thymus_seurat_tiss.Robj'))
+droplet_Thymus_seurat_tiss <- UpdateSeuratObject(tiss)
+rm(tiss)
+
+load(paste0(path_seurat_objects, 'facs_Thymus_seurat_tiss.Robj'))
+facs_Thymus_seurat_tiss <- UpdateSeuratObject(tiss)
+rm(tiss)
+
+```
+
+```{r}
+unique(droplet_Thymus_seurat_tiss$free_annotation)
+unique(droplet_Thymus_seurat_tiss$cluster.ids)
+unique(facs_Thymus_seurat_tiss$cluster.ids) # 8 clusters
+
+
+unique(facs_Thymus_seurat_tiss$)
+
+
+DimPlot(facs_Thymus_seurat_tiss, reduction = "tsne")
+```
+
