@@ -41,7 +41,14 @@ check_install_load_library <- function(library_name, type = 'BiocManager' ){
 
 ```{r setup}
 library(DecoFlex)
-reticulate::py_install(envname="~/miniconda3/envs/r_DecoFlex", packages="/Users/crhisto/Documents/GitHub/NMMFlex/NMMFlexPy", pip=TRUE)
+environment <- 'server'
+
+if(environment == 'desktop'){
+  reticulate::py_install(envname="~/miniconda3/envs/r_DecoFlex", packages="/Users/crhisto/Documents/GitHub/NMMFlex/NMMFlexPy", pip=TRUE)
+}else{
+  reticulate::py_install(envname="~/anaconda3/envs/r_DecoFlex", packages="/mnt_volumen/GIT_REPOSITORIES/NMMFlex/NMMFlexPy", pip=TRUE)
+}
+
 ```
 
 TODO create function to install differents and load.
