@@ -1,0 +1,238 @@
+---
+title: "Thymus Methylation analysis"
+output: html_notebook
+---
+
+I will take as a reference the following code: https://nbis-workshop-epigenomics.readthedocs.io/en/latest/content/tutorials/methylationSeq/Seq_Tutorial.html
+```{r loading.data}
+#BiocManager::install("RnBeads")
+library("RnBeads")
+library(methylKit)
+library("genomation")
+library("GenomicRanges")
+
+load('/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/meth/MethylKitDiffs.rData')
+```
+
+# Descriptive Statistics
+
+```{r stats}
+# Get a histogram of the methylation percentage per sample
+# Here for sample 1
+for(counter in 1:12){
+  getMethylationStats(myobj[[counter]], plot=TRUE, both.strands=FALSE)
+}
+
+```
+
+```{r coverage}
+
+for(counter in 1:12){
+  # Get a histogram of the read coverage per sample
+  getCoverageStats(myobj[[counter]], plot=TRUE, both.strands=FALSE)
+  # Get percentile data by setting plot=FALSE
+  getCoverageStats(myobj[[counter]], plot=FALSE, both.strands=FALSE)
+}
+
+
+```
+
+```{r filtering}
+
+myobj.filt <- filterByCoverage(myobj,lo.count=10,lo.perc=NULL, hi.count=NULL,hi.perc=99.9)
+
+```
+
+```{r normalization}
+myobj.filt.norm <- normalizeCoverage(myobj.filt, method = "median")
+
+```
+
+```{r merging}
+meth <- methylKit::unite(myobj.filt.norm, destrand=FALSE)
+
+perc.meth <- percMethylation(meth, rowids = TRUE)/100
+```
+```{r more.filtering}
+# get percent methylation matrix
+pm=percMethylation(meth)
+
+# calculate standard deviation of CpGs
+sds=matrixStats::rowSds(pm)
+
+# Visualize the distribution of the per-CpG standard deviation
+# to determine a suitable cutoff
+hist(sds, breaks = 100)
+
+# keep only CpG with standard deviations larger than 2%
+meth <- meth[sds > 2]
+
+# This leaves us with this number of CpG sites
+nrow(meth)
+```
+# Removing mutation locations: SNPs
+
+```{bash download.data}
+cd SNPAtlas
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr1_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr2_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr3_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr4_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr5_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr6_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr7_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr8_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr9_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr10_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr11_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr12_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr13_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr14_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr15_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr16_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr17_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr18_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr19_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chr19_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chrX_mouse_impute.vcf.gz
+wget http://gong_lab.hzau.edu.cn/static/Animal_SNPAtlas/download/species/mouse/panel/chrY_mouse_impute.vcf.gz
+
+```
+
+```{r creation.object.memory.snps}
+path <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/meth/SNPAtlas/'
+files <- paste0(c(1:19, 'chrX', 'chrY'), '_mouse_impute.vcf.gz')
+
+snp_mouse <- GRanges()
+# Add all the SNPs for the 21 chromosomes
+for(file in files){
+  chr_contend <- vcfR::read.vcfR(paste0(path, files))
+  snp_mouse <- append(snp_mouse, chr_contend)
+}
+
+```
+
+
+https://grunwaldlab.github.io/Population_Genetics_in_R/reading_vcf.html
+```{r importing.method.1}
+#install.packages('vcfR')
+
+#https://mrcieu.github.io/gwasvcf/index.html
+#remotes::install_github("mrcieu/gwasvcf")
+
+library(vcfR)
+
+#convert vcf to Granges
+library(gwasvcf)
+
+#https://rdrr.io/bioc/VariantAnnotation/man/VCF-class.html
+library(VariantAnnotation)
+
+# 1. Importing the vcf file
+chr_1 <- vcfR::read.vcfR("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/meth/filters/chr1_mouse_impute.vcf.gz")
+
+chr_1 <- readVcf("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/meth/filters/chr1_mouse_impute.vcf.gz")
+
+# 2. Converting the snp in GRanges.
+snp_chr_1_gr <- vcf_to_granges(chr_1, id = NULL)
+
+
+queryMETA(chr_1)
+queryMETA(chr_1, element = 'AF')
+head(getFIX(chr_1))
+
+
+head(chr_1)
+
+
+
+
+```
+```{r importing.data.method.2}
+
+library(BSgenome)
+head(available.genomes())
+
+
+
+#https://github.com/ToolsVanBox/MutationalPatterns/blob/master/vignettes/Introduction_to_MutationalPatterns.Rmd
+#BiocManager::install("BSgenome.Mmusculus.UCSC.mm10")
+#BiocManager::install("MutationalPatterns")
+ref_genome <- "BSgenome.Mmusculus.UCSC.mm10"
+library(ref_genome, character.only = TRUE)
+library(MutationalPatterns)
+
+vcf_files <- c("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/meth/filters/chr1_mouse_impute.vcf.gz")
+sample_names <- c('chr1')
+
+
+
+grl_chr_1 <- MutationalPatterns::read_vcfs_as_granges(vcf_files, sample_names, ref_genome)
+```
+
+
+1. First we Download the Animal SNPAtlas from http://gong_lab.hzau.edu.cn/Animal_SNPAtlas/#!/search_mouse
+```{r remove.mutation.snps}
+library(GenomicRanges)
+
+#importing database
+SNPAtlas <- read.csv("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/data_thymus/meth/SNPAtlas.csv")
+
+
+# give the locations of 2 example SNPs
+mut <- GRanges(seqnames=c("chr1","GL456210.1"),
+         ranges=IRanges(start=c(9853296, 51203),
+                        end=c( 9853296,51203)))
+
+# select CpGs that do not overlap with mutations
+meth <- meth[!overlapsAny(as(meth,"GRanges"), mut), ]
+
+```
+```{r data.structure.outlier}
+getCorrelation(meth,plot=TRUE)
+clusterSamples(meth, dist="correlation", method="ward", plot=TRUE)
+PCASamples(meth)
+
+```
+# Differential methylation
+```{r}
+# Test for differential methylation... This might take a few minutes.
+myDiff <- calculateDiffMeth(meth,
+                            overdispersion = "MN",
+                            adjust="BH")
+myDiff
+```
+
+```{r}
+# Simple volcano plot to get an overview of differential methylation
+plot(myDiff$meth.diff, -log10(myDiff$qvalue))
+abline(v=0)
+```
+
+```{r}
+# Overview of percentage hyper and hypo CpGs per chromosome.
+diffMethPerChr(myDiff)
+```
+
+```{r}
+# get hyper methylated bases and order by qvalue
+myDiff25p.hyper <- getMethylDiff(myDiff,
+                              difference=25,
+                              qvalue=0.01,
+                              type="hyper")
+myDiff25p.hyper <- myDiff25p.hyper[order(myDiff25p.hyper$qvalue),]
+
+# get hypo methylated bases and order by qvalue
+myDiff25p.hypo <- getMethylDiff(myDiff,
+                             difference=25,
+                             qvalue=0.01,
+                             type="hypo")
+myDiff25p.hypo <- myDiff25p.hypo[order(myDiff25p.hypo$qvalue),]
+
+# get all differentially methylated bases and order by qvalue
+myDiff25p <- getMethylDiff(myDiff,
+                        difference=25,
+                        qvalue=0.01)
+myDiff25p <- myDiff25p[order(myDiff25p$qvalue),]
+```
+
