@@ -726,7 +726,7 @@ gplots::heatmap.2(cors.expression.tumor.normal,
                   main = "Correlation: true expresion profiles vs deconflex calculation (cancer, Normal)")
 ```
 
-## 5.4. Complete expression profile
+## 5.4. Complete methylation profile
 
 Let's proceed by combining the methylation profiles of both cancer and normal samples for further analysis.
 ```{r decoflex.gridsearch.normal.tumor.together.correlation.methylation, fig.width=7, fig.height=10}
@@ -821,6 +821,33 @@ abline(0,1)
 
 plot(model.tumors.nmf$w[,"Immune"],
      model.normal.nmf$w[,"Immune"],col="steelblue",
+     xlab = "Estimated tumor immune",
+     ylab = "Estimated normal immune")
+abline(0,1)
+
+cor(model.tumors.nmf$w[,"Epithelial"], model.normal.nmf$w[,"Epithelial"])
+cor(model.tumors.nmf$w[,"Stromal"], model.normal.nmf$w[,"Stromal"])
+cor(model.tumors.nmf$w[,"Immune"], model.normal.nmf$w[,"Immune"])
+
+```
+
+```{r decoflex.gridsearch.normal.vs.tumor, fig.width=11, fig.height=4}
+
+par(mfrow=c(1,3))
+plot(model.tumors.nmf$a[,"Epithelial"],
+     model.normal.nmf$a[,"Epithelial"],col="steelblue",
+     xlab = "Estimated tumor Epithelium",
+     ylab = "Estimated normal Epithelium")
+abline(0,1)
+
+plot(model.tumors.nmf$a[,"Stromal"],
+     model.normal.nmf$a[,"Stromal"],col="steelblue",
+     xlab = "Estimated tumor Stroma",
+     ylab = "Estimated normal Stroma")
+abline(0,1)
+
+plot(model.tumors.nmf$a[,"Immune"],
+     model.normal.nmf$a[,"Immune"],col="steelblue",
      xlab = "Estimated tumor immune",
      ylab = "Estimated normal immune")
 abline(0,1)
@@ -1329,4 +1356,52 @@ ret <- rev(accumulator)
 # partition_leaves(plot.1$colDendrogram)
 # plot.1$colDendrogram %>% get_nodes_attr("label")
 
+```
+
+
+# 8. Partially referenced deconvolution
+
+# 8.1 Regularization
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero.regularization}
+library(DecoFlex)
+#delta_threshold
+format(1e-20, scientific = FALSE)
+
+start_time <- Sys.time()
+
+# For the reticulate library I have to specify the parameter type.
+deco.alpha.beta.zero.results.regu <- DecoFlex::run_complete_deconvolution(
+  x_matrix = data.frame(meth_mixtures[markers_ovr,]),
+  y_matrix = NULL,
+  z_matrix = NULL,
+  k = 5,
+  alpha = 0, 
+  beta = 0,
+  delta_threshold=1e-20, 
+  max_iterations=1000,
+  constraint_type_w = 'power',
+  constraint_value_w = as.double('0.50'))
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+```{r hist.matrix.w}
+hist(as.matrix(deco.alpha.beta.zero.results.regu$w), main = 'Histogram Thymus DecoFlex W - Meth profile')
+```
+
+2. We will analyze heatmaps that depict the correlation between the Matrix W (calculated methylation profiles) and the public methylation reference, in addition to the true methylation profiles.
+```{r decoflex.deconvolution.getting.w.delta.alpha.zero.results.regu, fig.width=7, fig.height=6}
+
+plot_heatmap_correlation_deconvolution_vs_true_Edec(
+  reference_meth,
+  reference_meth_class, 
+  deco.alpha.beta.zero.results.regu$w, 
+  markers_ovr)
+
+plot_Edec.estimated.profiles.vs.truly.mixtures(
+  true_cell_type_meth,
+  deco.alpha.beta.zero.results.regu$w,
+  markers_ovr)
 ```
