@@ -449,7 +449,11 @@ run_deconvolution_tree_guided_recursive <- function(
     test.use.value = 'wilcox',
     marker_strategy = 'keep_default_values',
     minimum_markers = 4,
+    percentile_markers = NULL,
     min_delta_cor_threshold = 0.05,
+    percentile_markers.min_corr = NULL,
+    max_iterations = 10000,
+    delta_threshold = 1e-10,
     verbose = FALSE){
 
   message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
@@ -546,10 +550,12 @@ run_deconvolution_tree_guided_recursive <- function(
     test.use.value = test.use.value,
     marker_strategy = marker_strategy,
     minimum_markers = minimum_markers.use,
+    percentile_markers = percentile_markers, 
     min_delta_cor_threshold = min_delta_cor_threshold.use,
+    percentile_markers.min_corr = percentile_markers.min_corr,
     verbose = verbose)
 
-  # 2.1. Assing the final markers and the top marker list
+  # 2.1. Assign the final markers and the top marker list
   markers.top.clusters <- markers.top.clusters.object$total_markers
   list.top.marker <- markers.top.clusters.object$list_markers
 
@@ -559,6 +565,8 @@ run_deconvolution_tree_guided_recursive <- function(
     bulk_data_x = bulk_data,
     references_w = reference_w.top.cluster$basis,
     markers = markers.top.clusters,
+    max_iterations = max_iterations,
+    delta_threshold = delta_threshold, 
     verbose = verbose)
 
   # 3. Run the proportion back propagation with respect to the top proportions
@@ -628,7 +636,9 @@ run_deconvolution_tree_guided_recursive <- function(
       param.logfc.threshold = param.logfc.threshold.use,
       param.p_val_adj = param.p_val_adj.use,
       minimum_markers = minimum_markers.use,
+      percentile_markers = percentile_markers,
       min_delta_cor_threshold = min_delta_cor_threshold.use,
+      percentile_markers.min_corr = percentile_markers.min_corr,
       verbose = verbose)
   }
 
@@ -721,7 +731,11 @@ run_deconvolution_tree_guided_recursive <- function(
         test.use.value = test.use.value,
         marker_strategy = marker_strategy,
         minimum_markers = minimum_markers.use,
+        percentile_markers = percentile_markers,
         min_delta_cor_threshold = min_delta_cor_threshold.use,
+        max_iterations = max_iterations,
+        delta_threshold = delta_threshold,
+        percentile_markers.min_corr = percentile_markers.min_corr,
         verbose = verbose)
 
     }else if(length(subclusters_list) == 1){
@@ -897,7 +911,11 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
                                           test.use.value = 'wilcox',
                                           marker_strategy = 'keep_default_values',
                                           minimum_markers = 4,
+                                          percentile_markers = NULL,
                                           min_delta_cor_threshold = 0.05,
+                                          percentile_markers.min_corr = NULL,
+                                          max_iterations = 10000,
+                                          delta_threshold = 1e-10,
                                           verbose = FALSE){
 
   if(verbose){
@@ -924,7 +942,9 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
     param.p_val_adj = param.p_val_adj,
     marker_strategy = marker_strategy,
     minimum_markers = minimum_markers,
+    percentile_markers = percentile_markers, 
     min_delta_cor_threshold = min_delta_cor_threshold,
+    percentile_markers.min_corr = percentile_markers.min_corr,
     verbose = verbose)
 
   # 3.1. Assing the final markers and the top marker list
@@ -937,6 +957,8 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
     bulk_data_x = bulk_data,
     references_w = reference_w.top.cluster$basis,
     markers = markers.top.clusters,
+    max_iterations = max_iterations,
+    delta_threshold = delta_threshold, 
     verbose = verbose)
 
   # In case the process is a simulation
@@ -1022,7 +1044,9 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
       test.use.value = test.use.value,
       marker_strategy = marker_strategy,
       minimum_markers = minimum_markers,
+      percentile_markers = percentile_markers,
       min_delta_cor_threshold = min_delta_cor_threshold,
+      percentile_markers.min_corr = percentile_markers.min_corr,
       verbose = verbose)
 
     # 5.3.1. Assing the final markers and the top marker list
@@ -1034,6 +1058,8 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
       bulk_data_x = bulk_data,
       references_w = reference_w_subclusters$basis,
       markers = markers_subclusters,
+      max_iterations = max_iterations,
+      delta_threshold = delta_threshold, 
       verbose = verbose)
 
     # 5.4.1. Adding detailed info of clusters
@@ -1142,7 +1168,9 @@ calculate_markers_level_intersection <- function(single_cell_data_exp,
                                                  param.p_val_adj = 0.05,
                                                  marker_strategy = NULL,
                                                  minimum_markers = 4,
+                                                 percentile_markers = NULL, 
                                                  min_delta_cor_threshold = 0.05,
+                                                 percentile_markers.min_corr = NULL,
                                                  verbose = FALSE){
   # 1. For each top cluster create the deconvolution for the subclusters
   # inside.
@@ -1183,7 +1211,9 @@ calculate_markers_level_intersection <- function(single_cell_data_exp,
         param.p_val_adj = param.p_val_adj,
         marker_strategy = marker_strategy,
         minimum_markers = minimum_markers,
+        percentile_markers = percentile_markers,
         min_delta_cor_threshold = min_delta_cor_threshold,
+        percentile_markers.min_corr = percentile_markers.min_corr, 
         verbose =  verbose)
 
       # 1.3.1. Assing the final markers and the top marker list
@@ -1469,7 +1499,9 @@ calculate_markers <- function(single_cell_data_exp,
                               filter_markers = NULL,
                               marker_strategy = 'keep_default_values',
                               minimum_markers = 4,
+                              percentile_markers = NULL,
                               min_delta_cor_threshold = 0.05,
+                              percentile_markers.min_corr = NULL,
                               verbose = TRUE){
 
   print(paste0('calculate_markers with verbose = ', verbose))
@@ -1712,17 +1744,49 @@ calculate_markers <- function(single_cell_data_exp,
     }
   }
 
-  # 5. Check with min_cor strategy.
+  # 5. Use percentile filtering normally .75 to extract for each celltype the top percentile of markers.
+  list_markers.percentile <- NULL
+  if(!is.null(percentile_markers)){
+    
+    if(percentile_markers > 1){
+      error(paste0('percentile_markers must be (0,1]. Current value: ', percentile_markers))
+    }else{
+      list_markers.percentile <- list_markers
+      total_markers.percentile = NULL
+      print(paste0("Percentile filtering: ", percentile_markers))
+      
+      #For each celltype I choose the markers below the percentile threshold.
+      for(celltype in names(list_markers.percentile)){
+        quartile.calculation <- quantile(as.data.frame(list_markers.percentile[[celltype]]$avg_log2FC), c(percentile_markers), na.rm = TRUE) 
+        print(quartile.calculation[1])
+        filtered.data <- list_markers.percentile[[celltype]][list_markers.percentile[[celltype]]$avg_log2FC >= quartile.calculation[1],]
+        print(paste0(celltype, '=', nrow(filtered.data)))
+        list_markers.percentile[[celltype]] <- filtered.data
+        total_markers.percentile <- append(total_markers.percentile, unlist(filtered.data$gene_name))
+      }
+      
+      total_markers.percentile <- unlist(total_markers.percentile)
+      total_markers <- total_markers.percentile
+    }
+  }
+  
+  # 6. Check with min_cor strategy.
   if(use_min_cor_strategy){
-    total_markers <- calculate_min_correlation_incremental_markers(
+    results.min.corr <- calculate_min_correlation_incremental_markers(
       list_markers = list_markers,
       reference = reference,
       minimum_markers = minimum_markers,
       min_delta_cor_threshold = min_delta_cor_threshold,
+      percentile_markers.min_corr = percentile_markers.min_corr,
       verbose = verbose)
+    
+    total_markers <- results.min.corr$markers
+  }else{
+    results.min.corr <- list()
+    results.min.corr$accumulative_corr_markers <- NULL
   }
 
-  # 6. I get just unique markers
+  # 7. I get just unique markers
   total_markers <- unique(total_markers)
 
   if(verbose){
@@ -1730,7 +1794,10 @@ calculate_markers <- function(single_cell_data_exp,
   }
 
   # Return both objects: final markers and markers by cell-type
-  return(list(total_markers = total_markers, list_markers = list_markers))
+  return(list(total_markers = total_markers, 
+              list_markers = list_markers, 
+              list_markers.percentile = list_markers.percentile, 
+              accumulative_corr_markers = results.min.corr$accumulative_corr_markers))
 }
 
 #' Calculate Marker Genes Proxy
@@ -1900,6 +1967,7 @@ calculate_min_correlation_incremental_markers <- function(
     reference,
     minimum_markers = 4,
     min_delta_cor_threshold = 0.05,
+    percentile_markers.min_corr = NULL,
     verbose = TRUE,
     verbose_detailed =  TRUE){
 
@@ -1927,6 +1995,7 @@ calculate_min_correlation_incremental_markers <- function(
   # case scenario when everything is 100% correlated
   min_value <- 1
   optimum_n_marker = -1
+  accumulative_corr_markers <- NULL
 
   # 3. I'm adding a marker each time and comparing the correlation between
   # samples
@@ -1961,6 +2030,14 @@ calculate_min_correlation_incremental_markers <- function(
                          ', number_markers_added: ', length(current_markers),
                          '. Gene added because: minimum_markers parameter.'))
           }
+          
+          #Add line to the accumulative_corr_markers
+          accumulative_corr_markers.temp <- data.frame('joint_cor'=joint_cor,
+                                                       'marker_count'=marker_count,
+                                                       'gene'=rownames(marker_set)[marker_count],
+                                                       'celltype'=names(list_markers)[couter_market_set],
+                                                       'reason_added'='minimum_markers_parameter', 
+                                                       'current_marker'=length(current_markers)) 
 
         }
       }else{
@@ -1977,6 +2054,8 @@ calculate_min_correlation_incremental_markers <- function(
           # I calculate the delta correlation t-1
           delta_correlation <- abs(min_value - joint_cor)
 
+          reason_added <- 'no_added'
+          
           # Getting the minimum value and the length of the marker vector when
           # that happen
           # Also I need to check that this value is greater than zero and
@@ -1989,6 +2068,8 @@ calculate_min_correlation_incremental_markers <- function(
             message('New optimum added with delta_correlation=',
                     delta_correlation, ', min_delta_cor_threshold: ',
                     min_delta_cor_threshold)
+            
+            reason_added <- paste0('added_optimum_delta_corr=',delta_correlation)
           }
 
           if(verbose_detailed){
@@ -1997,12 +2078,40 @@ calculate_min_correlation_incremental_markers <- function(
                          names(list_markers)[couter_market_set],
                          ', number_markers_added: ', length(current_markers)))
           }
+          
+          #Add line to the accumulative_corr_markers
+          accumulative_corr_markers.temp <- data.frame('joint_cor'=joint_cor,
+                                                       'marker_count'=marker_count,
+                                                       'gene'=rownames(marker_set)[marker_count],
+                                                       'celltype'=names(list_markers)[couter_market_set],
+                                                       'reason_added'=reason_added, 
+                                                       'current_marker'=length(current_markers)) 
 
         }
       }
+      
+      #Adding the new row
+      accumulative_corr_markers <- rbind(accumulative_corr_markers, 
+                                         accumulative_corr_markers.temp)
+      
     }
   }
 
+  #Lets take the percentile 25% by default or the parameter value.
+  if(!is.null(percentile_markers.min_corr)){
+    
+    if(percentile_markers.min_corr > 1){
+      error(paste0('percentile_markers.min_corr must be (0,1]. Current value: ', percentile_markers.min_corr))
+    }else{
+      print(paste0("Percentile filtering in min correlation function: ", percentile_markers.min_corr))
+      quartile.calculation <- quantile((accumulative_corr_markers$joint_cor), c(percentile_markers.min_corr), na.rm = TRUE)
+      accumulative_corr_markers.filtered <- accumulative_corr_markers[accumulative_corr_markers$joint_cor<=quartile.calculation[1],]
+      optimum_n_marker <- accumulative_corr_markers.filtered[nrow(accumulative_corr_markers.filtered),]$current_marker
+      min_value <- accumulative_corr_markers.filtered[nrow(accumulative_corr_markers.filtered),]$joint_cor
+      print(paste0('Opmimum n marker: ', optimum_n_marker))
+    }
+  }
+  
   # In the case that the available markers is <<< than the minimum marker number
   # In that case I used all the markers.
   if(optimum_n_marker==-1 ){
@@ -2028,7 +2137,9 @@ calculate_min_correlation_incremental_markers <- function(
   }
 
   # 3. I have to return the optimum markers
-  return(current_markers[1:optimum_n_marker])
+  return(list(markers=current_markers[1:optimum_n_marker], 
+              current_markers = current_markers,
+              accumulative_corr_markers=accumulative_corr_markers))
 }
 
 
@@ -2043,6 +2154,9 @@ calculate_min_correlation_incremental_markers <- function(
 #'  column representing a sample and each row corresponding to a gene.
 #' @param markers A vector of marker genes, which will be used to subset the
 #'  reference dataset for the correlation computation.
+#' @param method a character string indicating which correlation coefficient 
+#'  (or covariance) is to be computed. One of "pearson" (default), "kendall", 
+#'  or "spearman": can be abbreviated.
 #'
 #'  @import stats
 #'
@@ -2064,8 +2178,10 @@ calculate_min_correlation_incremental_markers <- function(
 #'
 #'
 #' @export
-calculate_joint_cor <- function(reference, markers){
-  cor_matrix <- stats::cor(reference[markers,])
+calculate_joint_cor <- function(reference, markers, method ="pearson"){
+  cor_matrix <- stats::cor(reference[markers,], 
+                           use = "everything",
+                           method = method)
   n_col <- ncol(reference)
   joint_cor <- (sum(cor_matrix)-sum(diag(cor_matrix)))/(n_col*n_col-n_col)
   return(joint_cor)

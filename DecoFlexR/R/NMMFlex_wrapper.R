@@ -107,6 +107,8 @@ environment_creation <- function(){
 #'  in the deconvolution. By default, this is set to NULL.
 #' @param max_iterations A positive integer. Represents the maximum number of
 #'  iterations for the deconvolution process. By default, this is set to 10000.
+#' @param delta_threshold The convergence threshold for stopping the 
+#'  deconvolution iterations.
 #' @param verbose A boolean. If TRUE, the function will print additional details
 #'  during the execution. By default, this is set to FALSE.
 #'
@@ -120,7 +122,8 @@ environment_creation <- function(){
 run_standard_deconvolution <- function(bulk_data_x,
                                        references_w,
                                        markers = NULL,
-                                       max_iterations=10000,
+                                       max_iterations = 10000,
+                                       delta_threshold = 1e-10, 
                                        verbose = FALSE){
 
   # 1. Calculation of the k equal to the number of cell references in the
@@ -164,7 +167,7 @@ run_standard_deconvolution <- function(bulk_data_x,
     y_matrix = NULL,
     z_matrix = NULL,
     k = as.integer(k), alpha = as.double(0.0), beta = as.double(0.0),
-    delta_threshold = 1e-10,
+    delta_threshold = delta_threshold,
     max_iterations = as.integer(max_iterations),
     proportion_constraint_h = as.logical(TRUE),
     fixed_w = data.frame(references_w),
