@@ -7,6 +7,10 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+```{r}
+save(list = ls(all.names = TRUE, name = environment()), file = "/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/backup/environment_25_10_2023.RData")
+```
+
 ```{r function.import.libraries}
 #Function to install and load libraries
 check_install_load_library <- function(library_name, type = 'BiocManager' ){
@@ -805,7 +809,7 @@ write.stats <- function(t, e, alg, error) {
 
 
 
-plot.formal.nmae <- function(merge, errors, dataset_name, fills.colours, celltype_order=NULL) {
+plot.formal.nmae <- function(merge, errors, dataset_name, fills.colours, celltype_order=NULL, legend.position = 'none') {
   
   
   # parameters: based on merge
@@ -851,7 +855,7 @@ plot.formal.nmae <- function(merge, errors, dataset_name, fills.colours, celltyp
     geom_text(size = 2.8) +
     scale_fill_manual(values = fills) +
     theme_bw() +
-    theme(legend.position = leg, panel.border = element_blank(), axis.text.x = element_text(angle = 30, hjust = 1),
+    theme(legend.position = legend.position, panel.border = element_blank(), axis.text.x = element_text(angle = 30, hjust = 1),
           axis.title.x = element_blank()) 
 }
 
@@ -896,13 +900,15 @@ colMeans(errors.thymus.orig.celltype$thymus$orig.celltype$DecoFlex)
 ```
 
 
-```{r nmae.thymus.orig.celltype, fig.width=8, fig.height=1.5}
+```{r nmae.thymus.orig.celltype, fig.width=8, fig.height=2}
 m2.order <- list_cell_types_thymus.orig.celltype.order
 
-#pdf(file = "NMAE - orig.celltype.pdf", height = 3.5, width = 3.5)
+path.figures <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/mixture_thymus/'
+
+#pdf(file = paste0(path.figures, "results_merge1_thymus_B.pdf"), height = 2.0, width = 8)
 plot.formal.nmae(merge='orig.celltype', errors = errors.thymus.orig.celltype, dataset_name = "thymus",
                  fills.colours = rev(c("#008080","#70a494","#b4c8a8","#de8a5a","#ca562c")), 
-                 celltype_order = list_cell_types_thymus.orig.celltype.order) + theme(legend.position = "none")
+                 celltype_order = list_cell_types_thymus.orig.celltype.order) + theme(legend.position = "bottom")
 #dev.off()
 ```
 
@@ -1038,7 +1044,7 @@ library(ggplot2)
 
 ```{r barplots_thymus.orig.celltype, fig.width=8, fig.height=3}
 y <- -0.05
-#pdf(file = "Correlation Barplot - orig.celltype.pdf", height = 6.16, width = 2.3)
+#pdf(file = paste0(path.figures, "results_merge1_thymus_A.pdf"), height = 3, width = 8)
 plot.formal.barplot(sig="thymus", merge = "orig.celltype", est.object= est.thymus.orig.celltype, true = true.thymus, plot.information = plot.information.thymus, celltype_order = list_cell_types_thymus.orig.celltype.order, add.enrich.algs = FALSE, lower.ylim = y) + labs(y = "") + theme(axis.ticks.y = element_blank()) 
 #dev.off()
 ```
@@ -1053,7 +1059,7 @@ library(cowplot)
 ## A quick function
 invis <- element_blank() # essentially: less to type. this removes an element from a ggplot!
 
-#pdf(file = "NMAE - merge1.pdf", height = 3.5, width = 3.5)
+#pdf(file = paste0(path.figures, "results_merge1_thymus_C.pdf"), height = 3, width = 5)
 plot.formal.mismatch.scatter(sig = "thymus", alg = "DecoFlex", merge = "orig.celltype", est.object = est.thymus.orig.celltype, true.object = true.thymus, plot.information = plot.information.thymus, no.xlab = FALSE, no.ylab = FALSE) + theme(legend.position = "right") + theme_light()
 #dev.off()
 ```
@@ -1126,12 +1132,12 @@ plot.formal.mismatch.scatter(sig = "thymus", alg = "DecoFlex", merge = "orig.cel
 ```
 
 ```{r scatter.plot.by.celltype.orig.celltype.thymus, fig.width=4, fig.height=7}
-  # plot all algorithms using orig.clusters.average 
-  #pdf(file = "Final Scatterplot - All Celltypes.pdf", height = 5.5, width = 8)
+# plot all algorithms using orig.clusters.average 
+#pdf(file = paste0(path.figures, "results_merge1_thymus_D.pdf"), height = 7, width = 4)
 
 print(plot.formal.scatter(sig = "thymus", alg = 'DecoFlex', merge = "orig.celltype", est = est.thymus.orig.celltype, true=true.thymus, plot.information = plot.information.thymus, nrow = 5) + labs(y = paste0('DecoFlex', " Proportion")))  
 
-  #dev.off()
+#dev.off()
 ```
 
 
@@ -1153,8 +1159,8 @@ reference.thymus <- decoflex_build_cell_reference(x = eset.sc.thymus.6.8.w.spars
 
 color_gradient <- colorRampPalette(c("white","steelblue"))
 
-reference_w.9.celltypes.thymus.with.names <- reference_w.9.celltypes.thymus$basis[, paste0('cluster_', c(1:8))]
-colnames(reference_w.9.celltypes.thymus.with.names) <- cluster_list.thymus.bigstage$bigstage[c(1:8)]
+reference_w.9.celltypes.thymus.with.names <- reference_w.9.celltypes.thymus$basis[, paste0('cluster_', c(1:4))]
+colnames(reference_w.9.celltypes.thymus.with.names) <- cluster_list.thymus.bigstage$bigstage[c(1:6)]
 
 cor.reference_matrix_w.9.celltypes.thymus <- cor(reference_w.9.celltypes.thymus.with.names)
 gplots::heatmap.2(cor.reference_matrix_w.9.celltypes.thymus,
