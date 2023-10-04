@@ -448,6 +448,7 @@ run_deconvolution_tree_guided_recursive <- function(
     param.p_val_adj = 0.05,
     test.use.value = 'wilcox',
     marker_strategy = 'keep_default_values',
+    ordering_strategy = 'pvalue_foldchange',
     minimum_markers = 4,
     percentile_markers = NULL,
     min_delta_cor_threshold = 0.05,
@@ -549,6 +550,7 @@ run_deconvolution_tree_guided_recursive <- function(
     param.p_val_adj = param.p_val_adj.use,
     test.use.value = test.use.value,
     marker_strategy = marker_strategy,
+    ordering_strategy = ordering_strategy, 
     minimum_markers = minimum_markers.use,
     percentile_markers = percentile_markers, 
     min_delta_cor_threshold = min_delta_cor_threshold.use,
@@ -730,6 +732,7 @@ run_deconvolution_tree_guided_recursive <- function(
         param.p_val_adj = param.p_val_adj.use,
         test.use.value = test.use.value,
         marker_strategy = marker_strategy,
+        ordering_strategy = ordering_strategy, 
         minimum_markers = minimum_markers.use,
         percentile_markers = percentile_markers,
         min_delta_cor_threshold = min_delta_cor_threshold.use,
@@ -1496,6 +1499,7 @@ calculate_markers <- function(single_cell_data_exp,
                               param.logfc.threshold = 2.0,
                               param.p_val_adj = 0.05,
                               test.use.value = 'wilcox',
+                              ordering_strategy = 'pvalue_foldchange',
                               filter_markers = NULL,
                               marker_strategy = 'keep_default_values',
                               minimum_markers = 4,
@@ -1625,12 +1629,12 @@ calculate_markers <- function(single_cell_data_exp,
     }
 
     # I need to order first the p-values from least to greatest and then the
-    # foldchange from biggest to smallest
-    ordering_strategy <- 'pvalue_foldchange'
+    # foldchange from biggest to smallest. I will use the variable 
+    # ordering_strategy [pvalue_foldchange, foldchange_pvalue]
 
     # Since arrange losses the rownames, I added it as columsn to fix the bug
     markers.info$gene_name <- rownames(markers.info)
-
+    message(paste0("ordering_strategy", ordering_strategy))
     if(ordering_strategy == 'pvalue_foldchange'){
 
       # 1a. Possible solution 1: first order by p-values and then for
@@ -1640,7 +1644,7 @@ calculate_markers <- function(single_cell_data_exp,
                               plyr::desc(markers.info[[foldchange_var]]))
 
     }else{
-      # 1b. Possible solution 2: seconnd order by foldchange and then p-values
+      # 1b. Possible solution 2: second order by foldchange and then p-values
       markers.info <- plyr::arrange(markers.info,
                                     plyr::desc(markers.info[[foldchange_var]]),
                                     (markers.info[[p_value_attribute]]))
