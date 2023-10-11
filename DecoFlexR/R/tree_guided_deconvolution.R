@@ -455,6 +455,7 @@ run_deconvolution_tree_guided_recursive <- function(
     percentile_markers.min_corr = NULL,
     max_iterations = 10000,
     delta_threshold = 1e-10,
+    markers.clusters.parameter = NULL,
     verbose = FALSE){
 
   message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
@@ -539,23 +540,29 @@ run_deconvolution_tree_guided_recursive <- function(
     verbose = verbose)
 
   # 2. Calculate the Marker genes for the top clusters
-  markers.top.clusters.object <- calculate_markers(
-    single_cell_data_exp = single_cell_data_exp,
-    reference = reference_w.top.cluster$basis,
-    group_clusters_var = top_clusters_var,
-    use_min_cor_strategy = use_min_cor_strategy,
-    delete_shared_internal_markers = delete_shared_internal_markers,
-    filter_markers = filter_markers,
-    param.logfc.threshold = param.logfc.threshold.use,
-    param.p_val_adj = param.p_val_adj.use,
-    test.use.value = test.use.value,
-    marker_strategy = marker_strategy,
-    ordering_strategy = ordering_strategy, 
-    minimum_markers = minimum_markers.use,
-    percentile_markers = percentile_markers, 
-    min_delta_cor_threshold = min_delta_cor_threshold.use,
-    percentile_markers.min_corr = percentile_markers.min_corr,
-    verbose = verbose)
+  # In this case, I can pass the object as parameter
+  markers.top.clusters.object <- NULL
+  if(is.null(markers.clusters.parameter)){
+    markers.top.clusters.object <- calculate_markers(
+      single_cell_data_exp = single_cell_data_exp,
+      reference = reference_w.top.cluster$basis,
+      group_clusters_var = top_clusters_var,
+      use_min_cor_strategy = use_min_cor_strategy,
+      delete_shared_internal_markers = delete_shared_internal_markers,
+      filter_markers = filter_markers,
+      param.logfc.threshold = param.logfc.threshold.use,
+      param.p_val_adj = param.p_val_adj.use,
+      test.use.value = test.use.value,
+      marker_strategy = marker_strategy,
+      ordering_strategy = ordering_strategy, 
+      minimum_markers = minimum_markers.use,
+      percentile_markers = percentile_markers, 
+      min_delta_cor_threshold = min_delta_cor_threshold.use,
+      percentile_markers.min_corr = percentile_markers.min_corr,
+      verbose = verbose)
+  }else{
+    markers.top.clusters.object <- markers.clusters.parameter
+  }
 
   # 2.1. Assign the final markers and the top marker list
   markers.top.clusters <- markers.top.clusters.object$total_markers
@@ -806,6 +813,192 @@ run_deconvolution_tree_guided_recursive <- function(
     back_propagation_proportions_top_detailed =
       back_propagation_proportions_top_detailed,
     markers.top.clusters.object = markers.top.clusters.object))
+}
+
+#' Run marker selection OMiC
+#'
+#' This function return multiple objects with the OMiC marker selection method,
+#' result, such you can visualize how the marker genes for each celltype has 
+#' been selected. Its the same function implemented in the initial part of the 
+#' function: run_deconvolution_tree_guided_recursive.
+#'
+#' @param result_deco_top A list representing the result of deconvolution at
+#'  the top level of the hierarchy. If NULL (default), the function
+#'  starts at the root of the tree.
+#' @param bulk_data The bulk data on which the deconvolution needs to be
+#'  performed.
+#' @param true_proportions An optional matrix representing the true proportions
+#'  of cell types. This can be used to calculate the accuracy of
+#'  the deconvolution. If NULL (default), the accuracy calculation is skipped.
+#' @param single_cell_data_exp A data frame representing single cell expression
+#'  data, used to guide the deconvolution process.
+#' @param sub_clusters_var A string representing the variable in
+#'  single_cell_data_exp which indicates sub-clusters.
+#' @param hierarchy A list structure describing the hierarchy of cell type
+#'  clustering.
+#' @param sample A string representing the sample name.
+#' @param use_min_cor_strategy A boolean indicating whether to use the minimum
+#'  correlation strategy during the marker calculation phase. Default is TRUE.
+#' @param delete_shared_level_markers A boolean indicating whether to delete
+#'  shared level markers during the marker calculation phase.
+#' Default is FALSE.
+#' @param delete_shared_internal_markers A boolean indicating whether to delete
+#'  shared internal markers during the marker calculation phase.
+#'  Default is FALSE.
+#' @param deconvolute_just_top A boolean indicating whether to perform
+#'  deconvolution only at the top level. If TRUE (default is FALSE), the
+#'  function stops after deconvoluting the top level and returns the result.
+#' @param deconvolute_top_hierarchy_limit An integer indicating the top
+#'  hierarchy limit for deconvolution. Default is 1.
+#' @param filter_markers An optional list of markers to be used for filtering
+#'  during the marker calculation phase. If NULL (default), no filtering is
+#'  performed.
+#' @param param.logfc.threshold A numeric value representing the log-fold-change
+#'  threshold for marker calculation. Default is 2.0.
+#' @param param.p_val_adj A numeric value representing the adjusted p-value
+#'  threshold for marker calculation. Default is 0.05.
+#' @param test.use.value A string indicating the statistical test to use for
+#'  marker calculation. Default is 'wilcox'.
+#' @param marker_strategy An optional string representing the marker selection
+#'  strategy. If NULL (default), a default strategy is used.
+#' @param minimum_markers The minimum number of marker genes to be selected,
+#'  default is set to 4. This can be adjusted based on the analysis
+#'  requirements.
+#' @param min_delta_cor_threshold Minimum difference between the correlation of
+#'  t and t-1 steps. The idea is to skip genes that have small changes in
+#'  the correlation. For default it is a 5%.
+#' @param verbose A boolean indicating whether to print detailed messages during
+#'  the execution of the function. Default is FALSE.
+#'
+#' @return Object with the marker gene structure.
+#'
+#' @import stats
+#'
+#' @export
+run_marker_selection_OMiC <- function(
+    result_deco_top =  NULL,
+    bulk_data,
+    true_proportions = NULL,
+    single_cell_data_exp,
+    sub_clusters_var,
+    hierarchy,
+    sample,
+    use_min_cor_strategy = TRUE,
+    delete_shared_level_markers = FALSE,
+    delete_shared_internal_markers = FALSE,
+    filter_markers = NULL,
+    param.logfc.threshold = 2.0,
+    param.p_val_adj = 0.05,
+    test.use.value = 'wilcox',
+    marker_strategy = 'keep_default_values',
+    ordering_strategy = 'pvalue_foldchange',
+    minimum_markers = 4,
+    percentile_markers = NULL,
+    min_delta_cor_threshold = 0.05,
+    percentile_markers.min_corr = NULL,
+    verbose = FALSE){
+  
+  message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
+                 verbose))
+  
+  # Let's begin with a basic validation about the samples names staring with #
+  current_columns <- unique(single_cell_data_exp[[sample]])
+  column_validation <- all(
+    unlist(lapply(current_columns,
+                  function(text) !grepl("^[[:digit:]]+", text))))
+  if(!column_validation){
+    stop(paste0('There are samples in the single cell data that start with a',
+                ' number. Please make sure that all samples start with a letter. Some R ',
+                'functionalities do not work with this kind of naming conventions.'))
+  }
+  
+  # Creation of the level name that I will use for the top deconvolution
+  top_clusters_var <- paste0('metacluster_level_', hierarchy$tree_level)
+  
+  if(verbose){
+    message('Recursive version tree-guided method: level ',
+            hierarchy$tree_level, ', leaf ', hierarchy$leaf_number,
+            ', strategy: ', use_min_cor_strategy)
+  }
+  
+  #-1. Checking the parameters in the object to locally use it
+  param.logfc.threshold.use <- param.logfc.threshold
+  if(!is.null(hierarchy$parameters$param.logfc.threshold)){
+    param.logfc.threshold.use <- hierarchy$parameters$param.logfc.threshold
+    message('Using param.logfc.threshold from object hierarchy: ',
+            param.logfc.threshold)
+  }
+  
+  param.p_val_adj.use <- param.p_val_adj
+  if(!is.null(hierarchy$parameters$param.p_val_adj)){
+    param.p_val_adj.use <- hierarchy$parameters$param.p_val_adj
+    message('Using param.p_val_adj from object hierarchy: ',
+            param.p_val_adj.use)
+  }
+  
+  minimum_markers.use <- minimum_markers
+  if(!is.null(hierarchy$parameters$minimum_markers)){
+    minimum_markers.use <- hierarchy$parameters$minimum_markers
+    message('Using minimum_markers from object hierarchy: ',
+            minimum_markers)
+  }
+  
+  min_delta_cor_threshold.use <- min_delta_cor_threshold
+  if(!is.null(hierarchy$parameters$min_delta_cor_threshold)){
+    min_delta_cor_threshold.use <- hierarchy$parameters$min_delta_cor_threshold
+    message('Using min_delta_cor_threshold from object hierarchy: ',
+            min_delta_cor_threshold)
+  }
+  
+  
+  
+  # 0. Create the top clustering on the dataset in a given variable or in the
+  # final configuration if next_level_clustering is NULL
+  if(!is.null(hierarchy$next_level_clustering)){
+    single_cell_data_exp <- add_grouping_single_cell(
+      single_cell_data_exp = single_cell_data_exp,
+      sub_clusters_var = sub_clusters_var,
+      level_group_name = top_clusters_var,
+      hierarchy_level_groups = hierarchy$next_level_clustering)
+    
+    # I got the list of top clusters
+    top_clusters_list <-
+      unique(stats::na.omit(single_cell_data_exp[[top_clusters_var]]))
+  }else{
+    # Because this is the end of the tree, I will use the original cell type
+    # variable and the original names as well
+    top_clusters_list <- unique(stats::na.omit(hierarchy$celltype_list))
+    top_clusters_var <- sub_clusters_var
+  }
+  
+  # 1. Create the reference for the top clustering configuration
+  reference_w.top.cluster <- decoflex_build_cell_reference(
+    x = single_cell_data_exp,
+    ct.sub = top_clusters_list,
+    ct.varname = top_clusters_var,
+    sample = sample,
+    verbose = verbose)
+  
+  # 2. Calculate the Marker genes for the top clusters
+  markers.top.clusters.object <- calculate_markers(
+    single_cell_data_exp = single_cell_data_exp,
+    reference = reference_w.top.cluster$basis,
+    group_clusters_var = top_clusters_var,
+    use_min_cor_strategy = use_min_cor_strategy,
+    delete_shared_internal_markers = delete_shared_internal_markers,
+    filter_markers = filter_markers,
+    param.logfc.threshold = param.logfc.threshold.use,
+    param.p_val_adj = param.p_val_adj.use,
+    test.use.value = test.use.value,
+    marker_strategy = marker_strategy,
+    ordering_strategy = ordering_strategy, 
+    minimum_markers = minimum_markers.use,
+    percentile_markers = percentile_markers, 
+    min_delta_cor_threshold = min_delta_cor_threshold.use,
+    percentile_markers.min_corr = percentile_markers.min_corr,
+    verbose = verbose)
+  
+  return(markers.top.clusters.object)
 }
 
 #' Add Grouping to Single Cell Data
