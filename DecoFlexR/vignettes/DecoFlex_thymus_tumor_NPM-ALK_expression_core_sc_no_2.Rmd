@@ -8,7 +8,9 @@ vignette: >
 ---
 
 ```{r}
-save(list = ls(all.names = TRUE, name = environment()), file = "/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/backup/environment_25_10_2023.RData")
+#save(list = ls(all.names = TRUE, name = environment()), file = "/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/backup/environment_13_10_2023.RData")
+
+#load("/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/backup/environment_27_09_2023.RData")
 ```
 
 ```{r function.import.libraries}
@@ -117,7 +119,7 @@ Save and load environment
 ```{r save.load.environment}
 
 file_name <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/myEnvironment_27_07_2023.RData'
-save.image(file=file_name)
+#save.image(file=file_name)
 #load(file_name)
 ```
 
@@ -563,8 +565,15 @@ eset.sc.sparse_thymus <- getESET(sparse_matrix_thymus, fdata = fdata_split_datas
 
 ## 1.3 Deconvolution: orig.celltype
 
+###1.3.1. Check marker genes from the data.
 ```{r creation.hierarchy.thymus}
 list_cell_types_thymus.orig.celltype <- c("1DN", "2preDP", "3DPbla", "4DPre", "5DPsel", "6CD4sp", "7CD8sp")
+
+hierarchical_clustering_thymus.orig.celltype.v0 <- list(
+  '1'=list(tree_level=0, leaf_number=1, celltype_list=list_cell_types_thymus.orig.celltype, 
+           next_level_clustering=NULL
+  )
+)
 
 hierarchical_clustering_thymus.orig.celltype <- list(
   '1'=list(tree_level=0, leaf_number=1, celltype_list=list_cell_types_thymus.orig.celltype, 
@@ -597,7 +606,415 @@ hierarchical_clustering_thymus.orig.celltype.v2 <- list(
            )
   )
 )
+
+
+
+hierarchical_clustering_thymus.orig.celltype.v3 <- list(
+  '1'=list(tree_level=0, leaf_number=1, parameters=list(param.logfc.threshold = 1.0,
+                                                        param.p_val_adj = 0.05,
+                                                        minimum_markers = 4,
+                                                        min_delta_cor_threshold = 0.3), 
+           celltype_list=list_cell_types_thymus.orig.celltype, 
+           next_level_clustering=list(
+             '1'=list(tree_level=1, leaf_number=1, name = 'DN', celltype_list=c("1DN"), next_level_clustering=NULL), 
+             '2'=list(tree_level=1, leaf_number=2, name = 'DP', parameters=list(param.logfc.threshold = 0.2,
+                                                                   param.p_val_adj = 0.05,
+                                                                   minimum_markers = 40,
+                                                                   min_delta_cor_threshold = 0.1),  
+                      celltype_list=c("2preDP", "3DPbla", "4DPre", "5DPsel"), next_level_clustering=NULL),
+             '3'=list(tree_level=1, leaf_number=3, name = 'CDs',parameters=list(param.logfc.threshold = 0.6,
+                                                                   param.p_val_adj = 0.05,
+                                                                   minimum_markers = 4,
+                                                                   min_delta_cor_threshold = 0.1),  
+                      celltype_list=c("6CD4sp", "7CD8sp"), next_level_clustering=NULL)
+           )
+  )
+)
+
 ```
+
+Plot of correlation vs marker gene selected in the same axes X (y=correlation, x = count)
+```{r function.plot_correlation_iterations}
+plot_correlation_iterations <- function(data.correlation.all, 
+                                        zoom.xlim = c(0, 55),
+                                        red_line = 28,
+                                        black_line = 155){
+  correlation.vs.markers.selected.plot <- ggplot(data.correlation.all, aes(x = marker_count, y = joint_cor, group = celltype, color = celltype, fill = celltype)) +
+    #geom_line() +
+    geom_area()+
+    theme_bw() +
+    theme(panel.border = invis, axis.line = element_line(), axis.title = element_text(size = 8), 
+          axis.text = element_text(size = 8), legend.position = "right") + 
+    ylim(-1,1) + 
+    labs(x = 'Batch number of marker genes selected incrementally', y = 'Join correlation between celltypes')
+  
+  if(!is.null(red_line)){
+    correlation.vs.markers.selected.plot <- correlation.vs.markers.selected.plot + geom_vline(xintercept=red_line,linetype = "dashed", colour = "red")
+  }
+  
+  if(!is.null(black_line)){
+    correlation.vs.markers.selected.plot <- correlation.vs.markers.selected.plot + geom_vline(xintercept=black_line,linetype = "dashed", colour = "black")
+  }
+  
+  if(!is.null(zoom.xlim)){
+    correlation.vs.markers.selected.plot <- correlation.vs.markers.selected.plot + ggforce::facet_zoom(xlim = zoom.xlim)
+  }
+  
+  return(correlation.vs.markers.selected.plot)
+}
+```
+
+
+Initially I tried the default values param.logfc.threshold = 1.0, however the minimum correlation was too high .66, maybe due to the sc experiment (depth, number of nuclei, quality of experiment, etc), so I have to tried lower values in order to get more representative markers, even trying lower p-adj value. The best cases was 60 markers(52) and 0.05. However, the minimum seems not to be the best results. 13-88
+```{r marker.analysis.thymus.merge1}
+
+#Parameters for the simulation
+single_cell_data_exp <- eset.sc.sparse_thymus
+hierarchy = hierarchical_clustering_thymus.orig.celltype.v0$`1`
+bulk_data = data.frame(as.matrix(eset.sparse_pseudobulk_thymus@assayData$exprs))
+sub_clusters_var <- 'orig.celltype'
+sample <- 'Disorder' #just one value: Control
+use_min_cor_strategy = TRUE
+delete_shared_level_markers = FALSE
+delete_shared_internal_markers = FALSE
+ordering_strategy = 'foldchange_pvalue'
+
+start_time <- Sys.time()
+
+#let's run de simulation
+marker.genes.OMiC.thymus.merge1 <- 
+  run_marker_selection_OMiC(bulk_data = bulk_data,
+                            single_cell_data_exp = single_cell_data_exp, 
+                            hierarchy = hierarchy,
+                            sub_clusters_var = sub_clusters_var,
+                            sample = sample, 
+                            use_min_cor_strategy = use_min_cor_strategy, 
+                            ordering_strategy = ordering_strategy, 
+                            delete_shared_level_markers = delete_shared_level_markers, 
+                            delete_shared_internal_markers = delete_shared_internal_markers,
+                            param.logfc.threshold = 0.1,
+                            param.p_val_adj = 0.05,
+                            minimum_markers = 4,
+                            min_delta_cor_threshold = 0.0,
+                            verbose = TRUE)  
+  
+
+```
+
+```{r correlation.vs.markers.selected.plot.thymus.merge1, fig.width=7, fig.height=5}
+library(ggplot2)
+data.correlation.all.thymus.merge1 <- marker.genes.OMiC.thymus.merge1$accumulative_corr_markers
+#Ordering celltypes
+order_celltypes.thymus.merge1 <- c("1DN", "2preDP", "3DPbla", "4DPre", "5DPsel", "6CD4sp", "7CD8sp")
+data.correlation.all.thymus.merge1$celltype <- factor(data.correlation.all.thymus.merge1$celltype, levels = order_celltypes.thymus.merge1)
+
+#Creation of the plot
+correlation.vs.markers.selected.plot.thymus.merge1 <- plot_correlation_iterations(data.correlation.all.thymus.merge1, zoom.xlim = c(0, 20), red_line = 9, black_line = 13)
+plot(correlation.vs.markers.selected.plot.thymus.merge1)
+
+#save_plot_as_pdf(correlation.vs.markers.selected.plot.thumus.merge1, 'thymus/correlation.vs.markers.selected.plot.thymus.merge1.pdf', 7, 5)
+```
+
+
+```{r plots.hierarchy.function}
+
+plot_correlation_iterations.hierarchy <- function(
+    single_cell_data_exp,
+    sub_clusters_var,
+    hierarchy,
+    sample,
+    use_min_cor_strategy = TRUE,
+    delete_shared_level_markers = FALSE,
+    delete_shared_internal_markers = FALSE,
+    filter_markers = NULL,
+    param.logfc.threshold = 2.0,
+    param.p_val_adj = 0.05,
+    test.use.value = 'wilcox',
+    marker_strategy = 'keep_default_values',
+    ordering_strategy = 'pvalue_foldchange',
+    minimum_markers = 4,
+    percentile_markers = NULL,
+    min_delta_cor_threshold = 0.05,
+    percentile_markers.min_corr = NULL,
+    verbose = TRUE){
+  
+  message(paste0('plot_correlation_iterations.hierarchy - Verbose: ',
+                 verbose))
+
+  # Let's begin with a basic validation about the samples names staring with #
+  current_columns <- unique(single_cell_data_exp[[sample]])
+  column_validation <- all(
+    unlist(lapply(current_columns,
+                  function(text) !grepl("^[[:digit:]]+", text))))
+  if(!column_validation){
+    stop(paste0('There are samples in the single cell data that start with a',
+    ' number. Please make sure that all samples start with a letter. Some R ',
+    'functionalities do not work with this kind of naming conventions.'))
+  }
+
+  # Creation of the level name that I will use for the top deconvolution
+  top_clusters_var <- paste0('metacluster_level_', hierarchy$tree_level)
+
+  if(verbose){
+    message('Recursive version tree-guided method: level ',
+            hierarchy$tree_level, ', leaf ', hierarchy$leaf_number,
+            ', strategy: ', use_min_cor_strategy)
+  }
+
+  # 0. Create the top clustering on the dataset in a given variable or in the
+  # final configuration if next_level_clustering is NULL
+  if(!is.null(hierarchy$next_level_clustering)){
+    single_cell_data_exp <- add_grouping_single_cell(
+      single_cell_data_exp = single_cell_data_exp,
+      sub_clusters_var = sub_clusters_var,
+      level_group_name = top_clusters_var,
+      hierarchy_level_groups = hierarchy$next_level_clustering)
+
+    # I got the list of top clusters
+    top_clusters_list <-
+      unique(stats::na.omit(single_cell_data_exp[[top_clusters_var]]))
+  }else{
+    # Because this is the end of the tree, I will use the original cell type
+    # variable and the original names as well
+    top_clusters_list <- unique(stats::na.omit(hierarchy$celltype_list))
+    top_clusters_var <- sub_clusters_var
+  }
+
+  # 1. Create the reference for the top clustering configuration
+  reference_w.top.cluster <- decoflex_build_cell_reference(
+    x = single_cell_data_exp,
+    ct.sub = top_clusters_list,
+    ct.varname = top_clusters_var,
+    sample = sample,
+    verbose = verbose)  
+  
+  #2. Checking markers
+  marker.genes.OMiC.result <- 
+  run_marker_selection_OMiC(single_cell_data_exp = single_cell_data_exp, 
+                            hierarchy = hierarchy,
+                            sub_clusters_var = sub_clusters_var,
+                            sample = sample, 
+                            use_min_cor_strategy = use_min_cor_strategy, 
+                            ordering_strategy = ordering_strategy, 
+                            delete_shared_level_markers = delete_shared_level_markers, 
+                            delete_shared_internal_markers = delete_shared_internal_markers,
+                            param.logfc.threshold = param.logfc.threshold,
+                            param.p_val_adj = param.p_val_adj,
+                            minimum_markers = minimum_markers,
+                            min_delta_cor_threshold = min_delta_cor_threshold,
+                            verbose = verbose)
+  
+  # 3.1. Calculation of minimum correlation marker
+  minimum.markers <- length(marker.genes.OMiC.result$total_markers)
+  marker_filtered <-  marker.genes.OMiC.result$accumulative_corr_markers[ marker.genes.OMiC.result$accumulative_corr_markers$current_marker == minimum.markers,]
+  id_selected <- rownames(marker_filtered)[nrow(marker_filtered)]
+  batch <- max(marker.genes.OMiC.result$accumulative_corr_markers$marker_count[1:id_selected])
+  
+  print(paste0('Batch: ', batch, ', Minimum, markers: ', minimum.markers))
+  
+  # 3. I will plot the corresponding marker behavior
+  correlation.vs.markers.selected.plot <- plot_correlation_iterations(
+    marker.genes.OMiC.result$accumulative_corr_markers,
+    zoom.xlim = c(0, round(max(marker.genes.OMiC.result$accumulative_corr_markers$marker_count)*.25)),
+    red_line = batch, 
+    black_line = NULL)
+  plot(correlation.vs.markers.selected.plot)
+  
+
+  #4. checking all the hierarchy parts
+  result_markers.OMiC_subclusters = NULL
+  for(current_hierarchy in hierarchy$next_level_clustering) {
+
+    top_cluster <- paste0('subcluster_level_', current_hierarchy$tree_level,
+                          '_leaf_',  current_hierarchy$leaf_number)
+    print(top_cluster)
+    
+    
+    # 4.1. check the subcluster that are part of the top cluster analyzed.
+    values_current_top_cluster <-
+      single_cell_data_exp[[top_clusters_var]] == top_cluster
+    values_subclusters <- single_cell_data_exp[[sub_clusters_var]]
+    subclusters_list <- unique(values_subclusters[values_current_top_cluster])
+    # This is the final list of celltypes that are related with this leaf
+    subclusters_list <-
+      levels(factor(subclusters_list[!is.na(subclusters_list)]))
+
+    # 4.2. This is just a double check since both list must coincide.
+    if(length(intersect(subclusters_list, current_hierarchy$celltype_list)) !=
+       length(current_hierarchy$celltype_list)){
+      stop(paste0('The hierarchy definition does not coincide with the single cell ',
+                  'data. Check input parameters.'))
+    }
+    
+    # 4.3. Checking for next level.
+    marker.genes.OMiC.results <- NULL
+    if(length(subclusters_list) > 1){
+        marker.genes.OMiC.results <- 
+          plot_correlation_iterations.hierarchy(
+            single_cell_data_exp = single_cell_data_exp, 
+            hierarchy = current_hierarchy,
+            sub_clusters_var = sub_clusters_var,
+            sample = sample, 
+            use_min_cor_strategy = use_min_cor_strategy, 
+            ordering_strategy = ordering_strategy, 
+            delete_shared_level_markers = delete_shared_level_markers, 
+            delete_shared_internal_markers = delete_shared_internal_markers,
+            param.logfc.threshold = param.logfc.threshold,
+            param.p_val_adj = param.p_val_adj,
+            minimum_markers = minimum_markers,
+            min_delta_cor_threshold = min_delta_cor_threshold,
+            verbose = verbose) 
+      
+    }
+    
+    # 4.4. Add the results to the global results.
+    result_markers.OMiC_subclusters[[top_cluster]] <- marker.genes.OMiC.results
+    
+  }
+  
+  return(list(
+    marker.genes.OMiC.result = marker.genes.OMiC.result,
+    correlation.vs.markers.selected.plot = correlation.vs.markers.selected.plot, 
+    next_level = result_markers.OMiC_subclusters
+  ))
+}
+ 
+
+  
+```
+
+```{r hierarchy.marker.analysis.thymus.merge1, fig.width=7, fig.height=5}
+
+#Parameters for the simulation
+single_cell_data_exp <- eset.sc.sparse_thymus
+hierarchy = hierarchical_clustering_thymus.orig.celltype.optimized$`1`
+bulk_data = data.frame(as.matrix(eset.sparse_pseudobulk_thymus@assayData$exprs))
+sub_clusters_var <- 'orig.celltype'
+sample <- 'Disorder' #just one value: Control
+use_min_cor_strategy = TRUE
+delete_shared_level_markers = FALSE
+delete_shared_internal_markers = FALSE
+ordering_strategy = 'foldchange_pvalue'
+
+start_time <- Sys.time()
+
+#let's run de simulation
+hierarchy.marker.genes.OMiC.thymus.merge1 <- 
+  plot_correlation_iterations.hierarchy(
+                            single_cell_data_exp = single_cell_data_exp, 
+                            hierarchy = hierarchy,
+                            sub_clusters_var = sub_clusters_var,
+                            sample = sample, 
+                            use_min_cor_strategy = use_min_cor_strategy, 
+                            ordering_strategy = ordering_strategy, 
+                            delete_shared_level_markers = delete_shared_level_markers, 
+                            delete_shared_internal_markers = delete_shared_internal_markers,
+                            param.logfc.threshold = 0.1,
+                            param.p_val_adj = 0.05,
+                            minimum_markers = 4,
+                            min_delta_cor_threshold = 0.0,
+                            verbose = TRUE)  
+  
+
+```
+
+
+```{r hierarchy.optimized}
+
+hierarchical_clustering_thymus.orig.celltype.optimized <- list(
+  '1'=list(tree_level=0, leaf_number=1, parameters=list(param.logfc.threshold = 0.1,
+                                                        param.p_val_adj = 0.05,
+                                                        minimum_markers = 4,
+                                                        min_delta_cor_threshold = 0.0), 
+           celltype_list=list_cell_types_thymus.orig.celltype, 
+           next_level_clustering=list(
+             '1'=list(tree_level=1, leaf_number=1, name = 'DN', celltype_list=c("1DN"), next_level_clustering=NULL), 
+             '2'=list(tree_level=1, leaf_number=2, name = 'DP', parameters=list(param.logfc.threshold = 0.1,
+                                                                   param.p_val_adj = 0.05,
+                                                                   minimum_markers = 4,
+                                                                   min_delta_cor_threshold = 0.0),  
+                      celltype_list=c("2preDP", "3DPbla", "4DPre", "5DPsel"), next_level_clustering=NULL),
+             '3'=list(tree_level=1, leaf_number=3, name = 'CDs',parameters=list(param.logfc.threshold = 0.1,
+                                                                   param.p_val_adj = 0.05,
+                                                                   minimum_markers = 4,
+                                                                   min_delta_cor_threshold = 0.0),  
+                      celltype_list=c("6CD4sp", "7CD8sp"), next_level_clustering=NULL)
+           )
+  )
+)
+
+
+select_markers <- function(marker.genes.OMiC_value, marker_number){
+  marker.genes.OMiC <- list()
+  marker.genes.OMiC$accumulative_corr_markers <- marker.genes.OMiC_value$accumulative_corr_markers
+  marker.genes.OMiC$list_markers <- NULL
+  marker.genes.OMiC$list_markers.percentile <- NULL
+  
+  
+    #Adding just the markers that I'm interesting on.
+    marker_filtered <-  marker.genes.OMiC_value$accumulative_corr_markers[ marker.genes.OMiC_value$accumulative_corr_markers$current_marker == marker_number,]
+    id_selected <- rownames(marker_filtered)[nrow(marker_filtered)]
+    
+    marker.genes.OMiC$total_markers <- unique(marker.genes.OMiC_value$accumulative_corr_markers$gene[1:id_selected])
+    
+    return(marker.genes.OMiC)
+}
+
+#Let's get the objects for the new limits
+marker.genes.thymus.merge1.top <- select_markers(
+  marker.genes.OMiC_value=hierarchy.marker.genes.OMiC.thymus.merge1$marker.genes.OMiC.result,
+  marker_number=37)
+marker.genes.thymus.merge1.dp <- select_markers(
+  marker.genes.OMiC_value=hierarchy.marker.genes.OMiC.thymus.merge1$next_level$subcluster_level_1_leaf_2$marker.genes.OMiC.result, 
+  marker_number=43)
+marker.genes.thymus.merge1.cds <- select_markers(
+  marker.genes.OMiC_value=hierarchy.marker.genes.OMiC.thymus.merge1$next_level$subcluster_level_1_leaf_3$marker.genes.OMiC.result, 
+  marker_number=8)
+
+hierarchical_clustering_thymus.orig.celltype.optimized.v1 <- list(
+  '1'=list(tree_level=0, leaf_number=1, parameters=list(param.logfc.threshold = 0.1,
+                                                        param.p_val_adj = 0.05,
+                                                        minimum_markers = 4,
+                                                        min_delta_cor_threshold = 0.0, 
+                                                        markers.clusters.parameter = marker.genes.thymus.merge1.top), 
+           celltype_list=list_cell_types_thymus.orig.celltype, 
+           next_level_clustering=list(
+             '1'=list(tree_level=1, leaf_number=1, name = 'DN', celltype_list=c("1DN"), next_level_clustering=NULL), 
+             '2'=list(tree_level=1, leaf_number=2, name = 'DP', parameters=list(param.logfc.threshold = 0.1,
+                                                                                param.p_val_adj = 0.05,
+                                                                                minimum_markers = 4,
+                                                                                min_delta_cor_threshold = 0.0, 
+                                                                                markers.clusters.parameter = marker.genes.thymus.merge1.dp),  
+                      celltype_list=c("2preDP", "3DPbla", "4DPre", "5DPsel"), next_level_clustering=NULL),
+             '3'=list(tree_level=1, leaf_number=3, name = 'CDs',parameters=list(param.logfc.threshold = 0.1,
+                                                                                param.p_val_adj = 0.05,
+                                                                                minimum_markers = 4,
+                                                                                min_delta_cor_threshold = 0.0, 
+                                                                                markers.clusters.parameter = marker.genes.thymus.merge1.cds),  
+                      celltype_list=c("6CD4sp", "7CD8sp"), next_level_clustering=NULL)
+           )
+  )
+)
+```
+
+
+
+The better value after the minimum is: 88 (76 unique markers) with a correlation value of: 0.49398321
+```{r better_value.deco}
+
+  markers.clusters.object.thymus.merge1 <- list()
+  markers.clusters.object.thymus.merge1$accumulative_corr_markers <- marker.genes.OMiC.thymus.merge1$accumulative_corr_markers
+  markers.clusters.object.thymus.merge1$list_markers <- NULL
+  markers.clusters.object.thymus.merge1$list_markers.percentile <- NULL
+  
+  #Adding just the markers that I'm interesting on.
+  marker_filtered <-  marker.genes.OMiC.thymus.merge1$accumulative_corr_markers[ marker.genes.OMiC.thymus.merge1$accumulative_corr_markers$current_marker == 88,]
+  id_selected <- rownames(marker_filtered)[nrow(marker_filtered)]
+  markers.clusters.object.thymus.merge1$total_markers <- unique(marker.genes.OMiC.thymus.merge1$accumulative_corr_markers$gene[1:id_selected])
+
+```
+
+
 
 ```{r deconvolution.actual.data.experiment.thymus}
 library(DecoFlex)
@@ -605,7 +1022,7 @@ library(DecoFlex)
 #Parameters for the simulation
 single_cell_data_exp <- eset.sc.sparse_thymus
 #single_cell_data_exp <- eset.sc.thymus.6.8.w.sparse
-hierarchy = hierarchical_clustering_thymus.orig.celltype.v2$`1`
+hierarchy = hierarchical_clustering_thymus.orig.celltype.v3$`1`
 bulk_data = data.frame(as.matrix(eset.sparse_pseudobulk_thymus@assayData$exprs))
 sub_clusters_var <- 'orig.celltype'
 #sub_clusters_var <- 'bigstage'
@@ -614,6 +1031,9 @@ sample <- 'Disorder' #just one value: Control
 use_min_cor_strategy = TRUE
 delete_shared_level_markers = FALSE
 delete_shared_internal_markers = FALSE
+ordering_strategy = 'foldchange_pvalue'
+#markers.clusters.parameter = markers.clusters.object.thymus.merge1
+markers.clusters.parameter = NULL
 
 start_time <- Sys.time()
 
@@ -625,22 +1045,43 @@ deco.actual.data.thymus.orig.celltype <-
                                           sub_clusters_var = sub_clusters_var,
                                           sample = sample, 
                                           use_min_cor_strategy = use_min_cor_strategy, 
+                                          ordering_strategy = ordering_strategy, 
                                           delete_shared_level_markers = delete_shared_level_markers, 
                                           delete_shared_internal_markers = delete_shared_internal_markers,
-                                          param.logfc.threshold = 1.0,
+                                          param.logfc.threshold = 0.1,
                                           param.p_val_adj = 0.05,
                                           minimum_markers = 4,
                                           min_delta_cor_threshold = 0.0,
                                           #percentile_markers.min_corr = 0.0,
-                                          #max_iterations = 15000,
-                                          #delta_threshold = 1e-15,
+                                          max_iterations = 15000,
+                                          delta_threshold = 1e-15,
+                                          markers.clusters.parameter = markers.clusters.parameter,
                                           verbose = TRUE)
 #  mins
 end_time <- Sys.time()
 end_time - start_time
 
 #root.dir <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/'
-#save(deco.actual.data.thymus.orig.celltype, file = paste0(root.dir, "deco.actual.data.thymus.orig.celltype.rDAta"))
+#save(deco.actual.data.thymus.orig.celltype, file = paste0(root.dir, "deco.actual.data.thymus.orig.celltype_flat.hierarchy.132.24.8_66.rDAta"))
+
+```
+
+```{r performance.plot.thymus.mixture, fig.width=4, fig.height=4}
+#Checking just for divergences
+thymus.plot_performance.thymus.mixture <- plot_deconvolution_performance_x_y_z_total(
+  deco.actual.data.thymus.orig.celltype$result_deco_top_cluster$running_info,
+  alpha=0,
+  beta = 0,
+  scale_parameters = TRUE,
+  include_divergences_x_y_z = FALSE,
+  include_divergences = FALSE,
+  include_zoom = FALSE,
+  zoom_xlim_limits=c(400, 475), 
+  include_title = FALSE) + theme(legend.position = "top")
+
+plot(thymus.plot_performance.thymus.mixture)
+
+#save_plot_as_pdf(thymus.plot_performance.thymus.mixture, 'performance_figures/thymus.plot_performance.thymus.mixture.pdf', 4, 4)
 
 ```
 
@@ -668,6 +1109,14 @@ cor.calc.vs.true.thymus.orig.celltype
 #v9. R=0.605 (65% 25%) for DecoFlex with mixtures: 100/400
 #v10. R=0.638 (65% 25%) for DecoFlex with mixtures: 100/500
 #v11. R=0.647 (65% 25%) for DecoFlex with mixtures: 100/50
+
+#new approach: minimum optimum: 0.716 default
+#marker gene: 88 72.4
+# 0.653 with 21, 18, 6
+# 0.657 with 37, 24, 8
+# 0.66 with 132, 24, 8
+# 0.663 with 37, 43, 8
+# 0.631 with 37, 88, 15
 round(mean(diag(cor.calc.vs.true.thymus.orig.celltype)), 3)
 
 ```
@@ -1682,6 +2131,7 @@ end_time - start_time
 Now we will run the deconvolution with the actual bulk dataset from Thymus experiment.
 ```{r deconvolution.manual.hierarchy.top}
 library(DecoFlex)
+#readRenviron('/Users/crhisto/.Renviron')
 
 order_normalized <- paste0('cluster_', c(1:3))
 standard_name_thymus <- c("Thy_WT_1", "Thy_WT_2", "Thy_WT_3", 
@@ -1865,6 +2315,27 @@ message(paste0(cor(deco.simulation.thymus.tree_guided.recursive.reduced.results.
 #save_plot_as_pdf(plot_top.wt_vs_ctrl, 'plot_proportions_top.wt_vs_ctrl.pdf', 8, 5)
 
 ```
+
+```{r performance.plot.TOP, fig.width=4, fig.height=5}
+#Checking just for divergences
+thymus.plot_performance.top <- plot_deconvolution_performance_x_y_z_total(
+  deco.actual.data.thymus.reduced.results.top$result_deco_top_cluster$running_info,
+  alpha=0,
+  beta = 0,
+  scale_parameters = TRUE,
+  include_divergences_x_y_z = FALSE,
+  include_divergences = FALSE,
+  include_zoom = TRUE,
+  zoom_xlim_limits=c(400, 475), 
+  include_title = FALSE) + theme(legend.position = "top")
+
+plot(thymus.plot_performance.top)
+
+#save_plot_as_pdf(thymus.plot_performance.top, 'performance_figures/thymus.plot_performance.top.pdf', 4, 5)
+
+```
+
+
 ### 3.3.2.2 Plot real proportions
 
 Comparison between the actual proportions of the single-cell data and the estimated proportions of the bulk thymus data, specifically with the Ctrl sample.
@@ -1887,7 +2358,7 @@ plot_top.all.results <- plot_proportions_thymus(order_normalized=order_normalize
                         colors = c("turquoise3" , "#136c38", "blue", "red", "pink", "orange")[c(2:4, 6)])
 plot(plot_top.all.results)
 
-save_plot_as_pdf(plot_top.all.results, 'plot_proportions_top.all.results.pdf', 8, 5)
+#save_plot_as_pdf(plot_top.all.results, 'plot_proportions_top.all.results.pdf', 8, 5)
 
 
 ```
@@ -2126,6 +2597,25 @@ message(paste0(cor(true.data.dp,
 
 ```
 
+```{r performance.plot.DP, fig.width=4, fig.height=5}
+#Checking just for divergences
+thymus.plot_performance.dp <- plot_deconvolution_performance_x_y_z_total(
+  deco.actual.data.thymus.reduced.results.dp$result_deco_top_cluster$running_info,
+  alpha=0,
+  beta = 0,
+  scale_parameters = TRUE,
+  include_divergences_x_y_z = FALSE,
+  include_divergences = FALSE,
+  include_zoom = TRUE,
+  zoom_xlim_limits=c(550, 680), 
+  include_title = FALSE) + theme(legend.position = "top")
+
+plot(thymus.plot_performance.dp)
+
+#save_plot_as_pdf(thymus.plot_performance.dp, 'performance_figures/thymus.plot_performance.dp.pdf', 4, 5)
+
+```
+
 ### 3.3.2.2 Plot real proportions
 
 ```{r real.proportions.dp}
@@ -2145,7 +2635,7 @@ plot_dp.all.results <- plot_proportions_thymus(order_normalized=order_normalized
                         colors = c("turquoise3" , "#136c38", "blue", "red", "pink", "orange")[c(2:4, 6)])
 plot(plot_dp.all.results)
 
-save_plot_as_pdf(plot_dp.all.results, 'plot_proportions_dp.all.results.pdf', 8, 5)
+#save_plot_as_pdf(plot_dp.all.results, 'plot_proportions_dp.all.results.pdf', 8, 5)
 
 ```
 
@@ -2301,6 +2791,25 @@ message(paste0())
 
 ```
 
+```{r performance.plot.CDs, fig.width=4, fig.height=5}
+#Checking just for divergences
+thymus.plot_performance.cds <- plot_deconvolution_performance_x_y_z_total(
+  deco.actual.data.thymus.reduced.results.cds$result_deco_top_cluster$running_info,
+  alpha=0,
+  beta = 0,
+  scale_parameters = TRUE,
+  include_divergences_x_y_z = FALSE,
+  include_divergences = FALSE,
+  include_zoom = TRUE,
+  zoom_xlim_limits=c(150, 185), 
+  include_title = FALSE) + theme(legend.position = "top")
+
+plot(thymus.plot_performance.cds)
+
+#save_plot_as_pdf(thymus.plot_performance.cds, 'performance_figures/thymus.plot_performance.cds.pdf', 4, 5)
+
+```
+
 ### 3.4.2.2 Plot real proportions
 
 ```{r real.proportions.cds}
@@ -2319,7 +2828,7 @@ plot_cds.all.results <- plot_proportions_thymus(order_normalized=order_normalize
                         colors = c("turquoise3" , "#136c38", "blue", "red", "pink", "orange")[c(2:4, 6)])
 plot(plot_cds.all.results)
 
-save_plot_as_pdf(plot_cds.all.results, 'plot_proportions_cds.all.results.pdf', 8, 5)
+#save_plot_as_pdf(plot_cds.all.results, 'plot_proportions_cds.all.results.pdf', 8, 5)
 
 ```
 
@@ -2366,7 +2875,7 @@ library(DecoFlex)
 
 #Parameters for the simulation
 single_cell_data_exp <- eset.sc.thymus.6.8.w.sparse.metacluster
-hierarchy = hierarchical_clustering_sc_thymus.reduced.complete
+hierarchy = hierarchical_clustering_sc_thymus.reduced.flat.complete
 sub_clusters_var <- 'cluster_normalized_bigstage'
 sample <- 'age'
 use_min_cor_strategy = TRUE
@@ -2496,6 +3005,101 @@ message(paste0(correlation.complete_model))
 
 ```
 
+```{r function.plot.multiple.deconvolutions}
+plot_deconvolution_performance_multiple_deconvolutions <- function(
+    running_info,
+    title_addition = '',
+    include_zoom = FALSE,
+    zoom_xlim_limits = c(0, 10),
+    include_title = TRUE){
+  
+  running_info.df <- data.frame(running_info)
+  
+  title <- "Iterations vs "
+
+  # Solution for the error 'no visible binding for global variable' posted in:
+  # https://www.r-bloggers.com/2019/08/no-visible-binding-for-global-variable/
+  # and solved in https://stackoverflow.com/questions/9439256 using:
+  # @importFrom ggplot2 .data, and the .data$ prefix.
+  
+  # Plot with both metric included
+  plot <- ggplot2::ggplot(running_info.df, 
+                          ggplot2::aes(x=.data$iteration,
+                                       y = log(.data$delta_divergence_value),
+                                       color = .data$model)) +
+    ggplot2::geom_line() +
+    ggplot2::ylab('log(delta_divergence_value)') +
+    ggplot2::theme_bw() +
+    ggplot2::theme(plot.title = ggplot2::element_text(size=10))
+  
+
+  if(include_zoom){
+    plot <- plot + ggforce::facet_zoom(xlim = zoom_xlim_limits)
+  }
+  
+  title <- paste0(title, ' and log(delta divergence)')
+  
+  # Adding the title
+  if(include_title){
+    plot <- plot + ggplot2::ggtitle(paste0(title, ' - ', title_addition))
+  }
+
+  print(plot)
+}
+```
+
+
+```{r}
+#let's join different plots
+
+running_info_top <- data.frame(deco.actual.data.thymus.reduced.results.top$result_deco_top_cluster$running_info)
+running_info_top$model <- 'Top level'
+
+running_info_dp <- data.frame(deco.actual.data.thymus.reduced.results.dp$result_deco_top_cluster$running_info)
+running_info_dp$model <- 'DP level'
+
+running_info_cds <- data.frame(deco.actual.data.thymus.reduced.results.cds$result_deco_top_cluster$running_info)
+running_info_cds$model <- 'CDs level'
+
+#Join data
+running_info_joined <- rbind(running_info_top, running_info_dp)
+running_info_joined <- rbind(running_info_joined,running_info_cds)
+running_info_joined$model <- factor(running_info_joined$model, levels = c("Top level", "DP level", "CDs level"))
+
+
+running_info_joined
+
+```
+
+
+```{r performance.plot.complete, fig.width=4, fig.height=3}
+#Checking just for divergences
+thymus.plot_performance.complete <- plot_deconvolution_performance_multiple_deconvolutions(
+  running_info_joined,
+  include_zoom = FALSE,
+  zoom_xlim_limits=c(150, 185), 
+  include_title = FALSE) + theme(legend.position = "right")
+
+plot(thymus.plot_performance.complete)
+
+#save_plot_as_pdf(thymus.plot_performance.complete, 'performance_figures/thymus.plot_performance.complete.pdf', 4, 3)
+
+```
+
+#### 3.4.2.1.1 Plot of marker genes.
+
+```{r}
+
+ggplot(deco.actual.data.thymus.reduced.results.top$markers.top.clusters.object$list_markers, aes(x=year, y=n, group=name, color=name)) +
+    geom_line()                                                                                                           
+                                                                                                    
+                                                                                                                
+                                                                                                                
+                                                                                                                
+                                                                                                                
+```
+
+
 ### 3.4.2.2 Plot real proportions
 
 ```{r real.proportions.complete}
@@ -2515,7 +3119,7 @@ plot_complete_join.all.results <- plot_proportions_thymus(order_normalized=order
 plot(plot_complete_join.all.results)
 
 
-save_plot_as_pdf(plot_complete_join.all.results, 'plot_proportions_complete_join.all.results.pdf', 8, 5)
+#save_plot_as_pdf(plot_complete_join.all.results, 'plot_proportions_complete_join.all.results.pdf', 8, 5)
 
 
 ```
@@ -2714,7 +3318,9 @@ plot_heatmap_markers_multiple_level <- function(
   color_left_groups = NULL, 
   clustering_variable = 'cluster_normalized_bigstage', 
   column.clusters = NULL, scale_activated=TRUE, 
-  show_legends = TRUE){
+  show_legends = TRUE, 
+  show_row_names.param = TRUE, 
+  col_function_main_values = NULL){
   
   ############# IMPORTING DATASETS
   
@@ -2975,6 +3581,7 @@ plot_heatmap_markers_multiple_level <- function(
                                  column_dend_reorder = FALSE,
                                  cluster_rows = TRUE,#
                                  row_dend_reorder = TRUE,#
+                                 show_row_names = show_row_names.param,
                                  show_column_names = FALSE,
                                  row_km = row_km_value,
                                  column_split = column.values$column.names,
@@ -2988,7 +3595,9 @@ plot_heatmap_markers_multiple_level <- function(
                                  column_dend_height = unit(90, "mm"), 
                                  row_dend_width =  unit(60, "mm"), 
                                  column_title_rot = 90,
-                                 row_title = 'Marker genes'
+                                 row_title = 'Marker genes',
+                                 na_col = "grey", 
+                                 col = col_function_main_values
   )
   
   print(heatmap.two.groups)
@@ -3049,7 +3658,7 @@ plot.level.1.2 <- plot_heatmap_markers_multiple_level(
                      column.clusters = paste0('cluster_', 2:5),
   color_left_groups = c("#D55E00", "#CC79A7", "skyblue", "brown"))
 
-save_plot_as_pdf(plot.level.1.2$plot, 'plot.level.dn_normal_model.pdf', 20, 22)
+#save_plot_as_pdf(plot.level.1.2$plot, 'plot.level.dn_normal_model.pdf', 20, 22)
 
 
 ```
@@ -3182,7 +3791,7 @@ seqlevels(genes.gr) <- seqlevelsInUse(genes.gr)
 # Let's try to create a different version of the gene list but with some base pair added
 # at the beginning in the promoter region (between 100bp and 1000bp)
 genes.gr.df <- data.frame(genes.gr)
-bp.to.add <- 2000
+bp.to.add <- 1000
 genes.extended.gr <- GRanges(genes.gr.df$seqnames, 
                               IRanges(start = genes.gr.df$start-bp.to.add, 
                                       end = genes.gr.df$end),
@@ -3267,7 +3876,7 @@ all_markers.thymus <- c(
 length(all_markers.thymus)
 #Unique markers: 150
 all_markers.thymus <- unique(all_markers.thymus)
-length(all_markers.thymus)
+length(unique(all_markers.thymus))
 
 #For each part of the model I have to choose different parts of the CpGs
 
@@ -3276,19 +3885,22 @@ all_markers.thymus.top <- c(
   #First the main leaf and the next level
   rownames(deco.actual.data.thymus.reduced.results.complete$result_deco_top_cluster$w)
 )
+length(unique(all_markers.thymus.top))
 
 #DP 132
 all_markers.thymus.dp <- c(
   rownames(deco.actual.data.thymus.reduced.results.complete$deco_results_list$subcluster_level_1_leaf_2$result_deco_top_cluster$w)
 )
 all_markers.thymus.dp <- unique(all_markers.thymus.dp)
+length(unique(all_markers.thymus.dp))
+
 
 #DN: 8
 all_markers.thymus.cds <- c(
   rownames(deco.actual.data.thymus.reduced.results.complete$deco_results_list$subcluster_level_1_leaf_3$result_deco_top_cluster$w)
 )
 all_markers.thymus.cds <- unique(all_markers.thymus.cds)
-
+length(unique(all_markers.thymus.cds))
 ```
 
 After that I can filter the CpGs based on the markers
@@ -4071,28 +4683,55 @@ select_markers_de <- function(de_object, log2FoldChange = 7.5){
   rownames(de_object[which(abs(de_object$log2FoldChange) >= log2FoldChange & de_object$padj <= 0.05),])
 }
 
-#61
-de_genes.thymus <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_KO_vs_Thy_WT, 5.1226535),
-                     select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_WT_vs_Thy_WT, 5.506788817),
-                     select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, 4.5012223))
-length(de_genes.thymus)
+limits.99.95 <- c(7.6473552, 8.854265150, 7.6399175) #35
+limits.99.9 <- c(7.1600693, 8.016101030, 6.8832673) #75
+limits.99.8 <- c(6.5093589, 6.955386661, 6.0556698) # 192
+limits.99.8_filtered <- c(6.5093589, 8.016101030, 6.0556698) # 192
+limits.99.7 <- c(5.9384472, 6.275647237, 5.3278772) # 313
+limits.99.5 <- c(5.1226535, 5.506788817, 4.5012223) #524 genes
+limits.99.5_filtered <- c(5.1226535, 8.016101030, 4.5012223) #with middle as 99.8
+limits.99 <- c(4.1945914, 4.545413862, 3.6603378)
+limits.99.filtered <- c(4.1945914, 6.955386661, 3.6603378)
+
+limits <- limits.99.5
+
+#61 all de genes.
+de_genes.thymus <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_KO_vs_Thy_WT, limits[1]),
+                     select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_WT_vs_Thy_WT, limits[2]),
+                     select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, limits[3]))
+length(unique(de_genes.thymus))
+
+
+# just ko.
+#de_genes.thymus <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_KO_vs_Thy_WT, 4.1945914),
+#                     select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, 3.6603378))
+#length(de_genes.thymus)
 
 #All genes
-de_genes.thymus.treatment_Thy_KO_vs_Thy_WT <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_KO_vs_Thy_WT, 5.1226535)) #6
+de_genes.thymus.treatment_Thy_KO_vs_Thy_WT <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_KO_vs_Thy_WT, limits[1])) #6
 paste(shQuote(de_genes.thymus.treatment_Thy_KO_vs_Thy_WT, type="sh"), collapse=", ")
+length(de_genes.thymus.treatment_Thy_KO_vs_Thy_WT)
 
 
-de_genes.thymus.treatment_Thy_ALKpos_WT_vs_Thy_WT <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_WT_vs_Thy_WT, 8.016101030))#8
+#check with this values 8.016101030
+de_genes.thymus.treatment_Thy_ALKpos_WT_vs_Thy_WT <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_WT_vs_Thy_WT, limits[2]))#8
 paste(shQuote(de_genes.thymus.treatment_Thy_ALKpos_WT_vs_Thy_WT, type="sh"), collapse=", ")
 length(de_genes.thymus.treatment_Thy_ALKpos_WT_vs_Thy_WT)
 
-de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, 6.8832673))
+#old value
+de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT <- c(select_markers_de(RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, limits[3]))
 paste(shQuote(de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT, type="sh"), collapse=", ")
+length(de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT)
 
 #144. We hope that this will be enough to describe the missing celltype.
 de_genes.thymus <- unique(de_genes.thymus)
 length(de_genes.thymus)
 paste(shQuote(de_genes.thymus, type="sh"), collapse=", ")
+
+
+#with 99.9 = 65 (7.1600693, 8.016101030, 6.8832673) 
+#with 99.5 = 529 (5.1226535, 5.506788817, 4.5012223) setting 8.016101030 = 106
+#with 99 =  988 (4.1945914, 4.545413862, 3.6603378) setting 99.8 = 118
 
 ```
 
@@ -4112,7 +4751,7 @@ vennpie(ven.plot, any = 1, revcolor = "lightgrey")
 vennpie(ven.plot, log = TRUE)
 dplot(ven.plot, order = TRUE, textsize = 4)
 
-save_plot_as_pdf(plot_upset_shared_genes, 'plot_upset_shared_genes.top.semireference_de_Thy_ALKpos_WT_vs_Thy_WT.pdf', 8, 4)
+#save_plot_as_pdf(plot_upset_shared_genes, 'plot_upset_shared_genes.top.semireference_de_Thy_ALKpos_WT_vs_Thy_WT.pdf', 8, 4)
 
 #See all shared genes
 data.genes.shared <- result(ven.plot, wide = TRUE)
@@ -4131,40 +4770,43 @@ library(EnhancedVolcano)
 
 
 treatment_Thy_KO_vs_Thy_WT_res <- results(dds, name = "treatment_Thy_KO_vs_Thy_WT")
-quantile(abs(as.data.frame(treatment_Thy_KO_vs_Thy_WT_res)$log2FoldChange), c(.25, .50, .75, .90, .95, .995), na.rm = TRUE) 
+quantile(abs(as.data.frame(treatment_Thy_KO_vs_Thy_WT_res)$log2FoldChange), c(.25, .50, .75, .90, .95, .99, .995, .997, .998, .999, .9995), na.rm = TRUE) 
 volcano_plot_treatment_Thy_KO_vs_Thy_WT <- EnhancedVolcano(treatment_Thy_KO_vs_Thy_WT_res,
   lab = rownames(treatment_Thy_KO_vs_Thy_WT_res),
-  #FCcutoff = c(-6.5093589, 6.5093589),
-  FCcutoff = -6.5093589,
+  FCcutoff = c(-limits[1], limits[1]),
+  #FCcutoff = limits[1],
   title = 'treatment_Thy_KO_vs_Thy_WT',
   x = 'log2FoldChange',
   y = 'pvalue')
 print(volcano_plot_treatment_Thy_KO_vs_Thy_WT)
-
 save_plot_as_pdf(volcano_plot_treatment_Thy_KO_vs_Thy_WT, 'volcano_plot_treatment_Thy_KO_vs_Thy_WT.pdf', 8, 6)
 
+
+
 res_treatment_Thy_ALKpos_WT_vs_Thy_WT <- results(dds, name = "treatment_Thy_ALKpos_WT_vs_Thy_WT")
-quantile(as.data.frame(res_treatment_Thy_ALKpos_WT_vs_Thy_WT)$log2FoldChange, c(.25, .50, .75, .90, .95, .995), na.rm = TRUE) 
+quantile(as.data.frame(res_treatment_Thy_ALKpos_WT_vs_Thy_WT)$log2FoldChange, c(.25, .50, .75, .90, .95, .99, .995, .997, .998, .999, .9995), na.rm = TRUE) 
 volcano_plot_treatment_Thy_ALKpos_WT_vs_Thy_WT <- EnhancedVolcano(res_treatment_Thy_ALKpos_WT_vs_Thy_WT,
   lab = rownames(res_treatment_Thy_ALKpos_WT_vs_Thy_WT),
-  FCcutoff = 8.016101030,
+  FCcutoff = c(-limits[2], limits[2]),
+  #FCcutoff = limits[2],
   title = 'treatment_Thy_ALKpos_WT_vs_Thy_WT',
   x = 'log2FoldChange',
   y = 'pvalue')
 print(volcano_plot_treatment_Thy_KO_vs_Thy_WT)
-
 save_plot_as_pdf(volcano_plot_treatment_Thy_ALKpos_WT_vs_Thy_WT, 'volcano_plot_treatment_Thy_ALKpos_WT_vs_Thy_WT.pdf', 8, 6)
 
+
+
 treatment_Thy_ALKpos_KO_vs_Thy_WT_res <- results(dds, name = "treatment_Thy_ALKpos_KO_vs_Thy_WT")
-quantile(abs(as.data.frame(treatment_Thy_ALKpos_KO_vs_Thy_WT_res)$log2FoldChange), c(.25, .50, .75, .90, .95, .995), na.rm = TRUE) 
+quantile(abs(as.data.frame(treatment_Thy_ALKpos_KO_vs_Thy_WT_res)$log2FoldChange), c(.25, .50, .75, .90, .95, .99, .995, .997, .998, .999, .9995), na.rm = TRUE) 
 volcano_plot_treatment_Thy_ALKpos_KO_vs_Thy_WT <- EnhancedVolcano(treatment_Thy_ALKpos_KO_vs_Thy_WT_res,
   lab = rownames(treatment_Thy_ALKpos_KO_vs_Thy_WT_res),
-  FCcutoff = 6.8832673,
+  FCcutoff = c(-limits[3], limits[3]),
+  #FCcutoff = limits[3],
   title = 'treatment_Thy_ALKpos_KO_vs_Thy_WT',
   x = 'log2FoldChange',
   y = 'pvalue')
 print(volcano_plot_treatment_Thy_KO_vs_Thy_WT)
-
 save_plot_as_pdf(volcano_plot_treatment_Thy_ALKpos_KO_vs_Thy_WT, 'volcano_plot_treatment_Thy_ALKpos_KO_vs_Thy_WT.pdf', 8, 6)
 
 ```
@@ -4174,8 +4816,12 @@ save_plot_as_pdf(volcano_plot_treatment_Thy_ALKpos_KO_vs_Thy_WT, 'volcano_plot_t
 Let's put together the marker genes from the flat deconvolution and the differential expressed genes.
 ```{r final.list.genes}
 black_list_genes <- c() #Xist?
-de_genes.thymus.total <- de_genes.thymus.treatment_Thy_ALKpos_WT_vs_Thy_WT
+#de_genes.thymus.total <- de_genes.thymus.treatment_Thy_KO_vs_Thy_WT #1
+#de_genes.thymus.total <- de_genes.thymus.treatment_Thy_ALKpos_WT_vs_Thy_WT #2
+#de_genes.thymus.total <- de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT #3
+
 #de_genes.thymus <- de_genes.thymus.total[de_genes.thymus.total %in% black_list_genes == FALSE]
+length(de_genes.thymus)
 
 #Let's create the w reference with all the genes and then we could see which are shared with the final_markers_partial_model
 # I don't use the one in the model becasue only has the marker genes in the reference and I need those  plus the Differential
@@ -4222,7 +4868,7 @@ final_markers_partial_model <- shared.final.vs.w
 ### 5.1.2. Creation of partial references: W and H
 
 Now we can create the partial references with ONE fixed cell-type
-```{r creation.mask.matrices.h.w.one.celltype}
+```{r creation.mask.matrices.h.w.one.celltype.v0}
 
 # I have n genes as rows and m+1 columns, being the last one the unknown one. 
 mask_h <- matrix(FALSE, nrow = (3+1), ncol = 12)
@@ -4287,7 +4933,7 @@ partial_w_fixed[1:length(final_markers_partial_model), 1:3] <- as.matrix(w_matri
 ```
 
 Now we can create the partial references with TWO OR MORE fixed cell-type
-```{r creation.mask.matrices.h.w.one.celltype}
+```{r creation.mask.matrices.h.w.one.celltype.v1}
 
 extra_unknown_celltypes <- 2
 
@@ -4354,7 +5000,7 @@ partial_w_fixed[1:length(final_markers_partial_model), 1:3] <- as.matrix(w_matri
 ```
 
 Now we can create the partial references with TWO OR MORE fixed cell-type but fixing the proportion results of the original model and the actual wt.
-```{r creation.mask.matrices.h.w.one.celltype}
+```{r creation.mask.matrices.h.w.one.celltype.v2}
 
 extra_unknown_celltypes <- 2
 
@@ -4448,6 +5094,7 @@ partial_w_fixed[1:length(final_markers_partial_model), 1:3] <- as.matrix(w_matri
 expression.CpGs.hits.meth.filtered.marker.genes.partial.top <- expression.CpGs.hits.meth[expression.CpGs.hits.meth$gene_name %in% c(final_markers_partial_model, extra_marker_genes_semireference),]
 #I filtered the CpGs that are associated with the marker genes.
 perc.meth.thymus.filtered.marker.genes.partial.top <- perc.meth.thymus[unique(expression.CpGs.hits.meth.filtered.marker.genes.partial.top$ID_METH),]
+perc.meth.thymus
 ```
 
 
@@ -4483,13 +5130,15 @@ start_time <- Sys.time()
 # I run the deconvolution without any other parameter
 deco.alpha.beta.zero.results.partial.top <- run_complete_deconvolution(
   x_matrix = data.frame(eset.thymus.bulk.sparse.df.filtered[c(final_markers_partial_model, extra_marker_genes_semireference), standard_name_thymus]),
-  y_matrix = data.frame(bulk_data_meth),
+  #y_matrix = data.frame(bulk_data_meth),
+  y_matrix = NULL,
   z_matrix = NULL,
   k = (3+extra_unknown_celltypes),
-  alpha = 0.00001, 
+  #alpha = 0.00001, 
+  alpha = 0,
   beta = 0,
-  delta_threshold=1e-10, 
-  max_iterations=100, 
+  delta_threshold=1e-15, 
+  max_iterations=10000, 
   #I have to deactivate the sum 1 because that is just for the 3 cell types
   proportion_constraint_h = proportion_constraint_h,
   partial_w_fixed=data.frame(partial_w_fixed[c(final_markers_partial_model, extra_marker_genes_semireference), ]),
@@ -4502,11 +5151,19 @@ end_time <- Sys.time()
 end_time - start_time
 ```
 
+```{r}
+#524 genes
+#deco.alpha.beta.zero.results.partial.top.extended <- deco.alpha.beta.zero.results.partial.top
+```
+
+
 Saving models
 ```{r saving_models}
  # save(deco.alpha.beta.zero.results.partial.top, file = paste0(
  #   '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/', 
  #   'deco.alpha.beta.zero.results.partial.top_Thy_KO_vs_Thy_WT.Rdata'))
+
+#load(paste0('/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/', 'deco.alpha.beta.zero.results.partial.top_Thy_KO_vs_Thy_WT.Rdata'))
 ```
 
 
@@ -4611,14 +5268,14 @@ plot_proportions_top_semireference.2.unknown <- ggplot(thymus.proportions.deconv
  
 plot_proportions_top_semireference.2.unknown <- plot_proportions_top_semireference.2.unknown +  scale_color_manual(name = "Sample", breaks = c('6_8w_thymus', 'Ctrl', 'KO', 'ALK', 'ALKKO'), values = c("darkgrey", "#136c38", "blue", "red", "orange")) + theme_light()
 
-p
+plot(plot_proportions_top_semireference.2.unknown)
 
-save_plot_as_pdf(plot_proportions_top_semireference.2.unknown, 'plot_proportions_top_semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 8, 5)
+#save_plot_as_pdf(plot_proportions_top_semireference.2.unknown, 'plot_proportions_top_semireference.2.unknown.pdf', 8, 5)
 
 ```
 
 Normal version
-```{r heatmap.level.top.semireference, fig.height=40, fig.width=15}
+```{r heatmap.level.top.semireference, fig.height=15, fig.width=15}
 
 #Creation of genes for the new unknown celltype
 top.level.1.markers.detailed_all.unknown <- data.frame(cbind(extra_marker_genes_semireference, 'subcluster_level_1_leaf_4', TRUE))
@@ -4642,17 +5299,65 @@ plot.level.top.semireference <- plot_heatmap_markers_multiple_level(
                      column.clusters = paste0('cluster_', 1:7),
                      color_left_groups = c("#D55E00", "#CC79A7", "skyblue", "darkgreen"), 
                      scale_activated = TRUE, 
-                     show_legends = TRUE
+                     show_legends = TRUE, 
+                     show_row_names.param = FALSE
                      ) 
 
 plot(plot.level.top.semireference$plot)
 
-save_plot_as_pdf(plot.level.top.semireference$plot, 'plot.level.top.semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 15, 40)
+#save_plot_as_pdf(plot.level.top.semireference$plot, 'plot.level.top.semireference_de_join_extended_524_markers.pdf', 15, 40)
+#save_plot_as_pdf(plot.level.top.semireference$plot, 'plot.level.top.semireference_de_join_extended_524_markers.pdf', 15, 40)
 
 #Saving the extra marker genes.
 library("writexl")
 path <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/'
-write_xlsx(top.level.1.markers.detailed_all.plus.unknow,paste0(path, "top.level.1.markers.detailed_all.plus.unknow.xlsx"))
+#write_xlsx(top.level.1.markers.detailed_all.plus.unknow,paste0(path, "top.level.1.markers.detailed_all.plus.unknow.xlsx"))
+
+```
+
+Improved version
+Version with unknown subclusters ordered and new palette
+```{r heatmap.level.top.semireference.unknown.clusters, fig.height=15, fig.width=15}
+
+top.level.1.markers.detailed_all.unknown <- data.frame(cbind(extra_marker_genes_semireference, 'Additional Markers', TRUE))
+colnames(top.level.1.markers.detailed_all.unknown) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
+rownames(top.level.1.markers.detailed_all.unknown) <- top.level.1.markers.detailed_all.unknown$gene_name
+
+#Adding those to the new one
+top.level.1.markers.detailed_all.plus.unknow <- rbind(top.level.1.markers.detailed_all$top.markers.detailed_all,
+                                                      top.level.1.markers.detailed_all.unknown)
+
+#Adding those to the new one
+top.level.1.markers.detailed_all.plus.groups <- rbind(top.level.1.markers.detailed_all$top.markers.detailed_all,
+                                                      top.level.1.markers.detailed_all.groups)
+
+#Plot with heatmap level 1
+library(circlize)
+col_fun = colorRamp2(c(-0.6, 0, 0.6), c("blue", "white", "red"))
+plot.level.top.semireference.final <- plot_heatmap_markers_multiple_level(
+                     sc.eset.metacluster.all = eset.sc.thymus.6.8.w.sparse.metacluster,
+                     sc.bulk.data.filtered.tpm = eset.thymus.bulk.sparse.df.filtered.tpm,
+                     pseudo.bulk.df.filtered.tpm = sc.pseudo.bulk.data.top,
+                     res.object.de = RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, 
+                     top.markers.detailed_all = top.level.1.markers.detailed_all.plus.unknow,
+                     clustering_variable = 'cluster_normalized_bigstage',
+                     list_cell_types = c(1:7), 
+                     row_km_value = 1,
+                     column.clusters = paste0('cluster_', 1:7),
+                     color_left_groups = c("#D55E00", "#CC79A7", "skyblue", "darkgreen", "green"), 
+                     scale_activated = TRUE, 
+                     show_legends = TRUE, 
+                     show_row_names.param = FALSE, 
+                     col_function_main_values = col_fun
+                     ) 
+
+save_plot_as_pdf(plot.level.top.semireference.final$plot, 'plot.level.top.semireference.final_additional_markers.pdf', 15, 15)
+
+
+#Saving the extra marker genes.
+library("writexl")
+path <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/'
+#write_xlsx(top.level.1.markers.detailed_all.plus.unknow,paste0(path, "top.level.1.markers.detailed_all.plus.unknow.xlsx"))
 
 ```
 
@@ -4673,7 +5378,7 @@ plot.level.top.semireference_semireference <- Heatmap(data_filtered_bulk, name =
                                  cluster_rows = TRUE,#
                                  row_dend_reorder = TRUE,#
                                  show_column_names = TRUE,
-                                 row_km = 2,
+                                 row_km = 5,
                                  clustering_distance_rows = "pearson",
                                  column_split = c(rep('Thy_WT', 3),
                                                   rep('Thy_KO', 3),
@@ -4700,6 +5405,9 @@ order_groups <- lapply(row_order(plot.level.top.semireference_semireference), fu
 
 group.1 <- unlist(order_groups$'1')
 group.2 <- unlist(order_groups$'2')
+group.3 <- unlist(order_groups$'3')
+group.4 <- unlist(order_groups$'4')
+group.5 <- unlist(order_groups$'5')
 
 group.1.names <- plot.level.top.semireference_semireference@row_names_param$labels[group.1]
 
@@ -4707,6 +5415,15 @@ paste(shQuote(group.1.names, type="sh"), collapse=", ")
 
 group.2.names <- plot.level.top.semireference_semireference@row_names_param$labels[group.2]
 paste(shQuote(group.2.names, type="sh"), collapse=", ")
+
+group.3.names <- plot.level.top.semireference_semireference@row_names_param$labels[group.3]
+paste(shQuote(group.3.names, type="sh"), collapse=", ")
+
+group.4.names <- plot.level.top.semireference_semireference@row_names_param$labels[group.4]
+paste(shQuote(group.4.names, type="sh"), collapse=", ")
+
+group.5.names <- plot.level.top.semireference_semireference@row_names_param$labels[group.5]
+paste(shQuote(group.5.names, type="sh"), collapse=", ")
 
 ##Real groups
 
@@ -4719,23 +5436,35 @@ save_plot_as_pdf(plot.level.top.semireference_semireference, 'plot.level.top.bul
 
 ```
 Version with unknown subclusters ordered
-```{r heatmap.level.top.semireference.unknown.clusters, fig.height=35, fig.width=15}
+```{r heatmap.level.top.semireference.unknown.clusters, fig.height=15, fig.width=15}
 
 #Creation of genes for the new unknown celltype
-top.level.1.markers.detailed_all.unknown.1 <- data.frame(cbind(group.1.names, 'unknown_1', TRUE))
-colnames(top.level.1.markers.detailed_all.unknown.1) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
-top.level.1.markers.detailed_all.unknown.2 <- data.frame(cbind(group.2.names, 'unknown_2', TRUE))
-colnames(top.level.1.markers.detailed_all.unknown.2) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
+top.level.1.markers.detailed_all.group.1 <- data.frame(cbind(group.1.names, 'Group 1', TRUE))
+colnames(top.level.1.markers.detailed_all.group.1) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
+top.level.1.markers.detailed_all.group.2 <- data.frame(cbind(group.2.names, 'Group 2', TRUE))
+colnames(top.level.1.markers.detailed_all.group.2) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
 
-top.level.1.markers.detailed_all.unknown <-rbind(top.level.1.markers.detailed_all.unknown.1,
-                                                 top.level.1.markers.detailed_all.unknown.2)
+top.level.1.markers.detailed_all.group.3 <- data.frame(cbind(group.3.names, 'Group 3', TRUE))
+colnames(top.level.1.markers.detailed_all.group.3) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
 
-colnames(top.level.1.markers.detailed_all.unknown) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
-rownames(top.level.1.markers.detailed_all.unknown) <- top.level.1.markers.detailed_all.unknown$gene_name
+top.level.1.markers.detailed_all.group.4 <- data.frame(cbind(group.4.names, 'Group 4', TRUE))
+colnames(top.level.1.markers.detailed_all.group.4) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
+
+top.level.1.markers.detailed_all.group.5 <- data.frame(cbind(group.5.names, 'Group 5', TRUE))
+colnames(top.level.1.markers.detailed_all.group.5) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
+
+top.level.1.markers.detailed_all.groups <-rbind(top.level.1.markers.detailed_all.group.1,
+                                                 top.level.1.markers.detailed_all.group.2, 
+                                                 top.level.1.markers.detailed_all.group.3,
+                                                 top.level.1.markers.detailed_all.group.4,
+                                                 top.level.1.markers.detailed_all.group.5)
+
+colnames(top.level.1.markers.detailed_all.groups) <- colnames(top.level.1.markers.detailed_all$top.markers.detailed_all)
+rownames(top.level.1.markers.detailed_all.groups) <- top.level.1.markers.detailed_all.groups$gene_name
 
 #Adding those to the new one
-top.level.1.markers.detailed_all.plus.unknow <- rbind(top.level.1.markers.detailed_all$top.markers.detailed_all,
-                                                      top.level.1.markers.detailed_all.unknown)
+top.level.1.markers.detailed_all.plus.groups <- rbind(top.level.1.markers.detailed_all$top.markers.detailed_all,
+                                                      top.level.1.markers.detailed_all.groups)
 
 #Plot with heatmap level 1
 plot.level.top.semireference <- plot_heatmap_markers_multiple_level(
@@ -4743,33 +5472,70 @@ plot.level.top.semireference <- plot_heatmap_markers_multiple_level(
                      sc.bulk.data.filtered.tpm = eset.thymus.bulk.sparse.df.filtered.tpm,
                      pseudo.bulk.df.filtered.tpm = sc.pseudo.bulk.data.top,
                      res.object.de = RES.thymus.lfc$treatment_Thy_ALKpos_KO_vs_Thy_WT, 
-                     top.markers.detailed_all = top.level.1.markers.detailed_all.plus.unknow,
+                     top.markers.detailed_all = top.level.1.markers.detailed_all.plus.groups,
                      clustering_variable = 'cluster_normalized_bigstage',
                      list_cell_types = c(1:7), 
                      row_km_value = 1,
                      column.clusters = paste0('cluster_', 1:7),
-                     color_left_groups = c("#D55E00", "#CC79A7", "skyblue", "darkgreen", "green"), 
+                     color_left_groups = c("#D55E00", "#CC79A7", "skyblue", "darkgreen", "grey", 'orange', 'blue', 'brown'), 
                      scale_activated = TRUE, 
-                     show_legends = TRUE
+                     show_legends = TRUE, 
+                     show_row_names.param = FALSE
                      ) 
 
-save_plot_as_pdf(plot.level.top.semireference$plot, 'plot.level.top.semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 20, 15)
+#save_plot_as_pdf(plot.level.top.semireference$plot, 'plot.level.top.semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 20, 15)
 
 
 #Saving the extra marker genes.
 library("writexl")
 path <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/'
-write_xlsx(top.level.1.markers.detailed_all.plus.unknow,paste0(path, "top.level.1.markers.detailed_all.plus.unknow.xlsx"))
+#write_xlsx(top.level.1.markers.detailed_all.plus.unknow,paste0(path, "top.level.1.markers.detailed_all.plus.unknow.xlsx"))
 
 ```
 
-```{r matrix.w, fig.width=6, fig.height=50}
+```{r matrix.w, fig.width=6, fig.height=10}
 
 data.matrix.w <- deco.alpha.beta.zero.results.partial.top$w
 data.matrix.w <- log1p((data.matrix.w))
 
 
-bulkdata.extra_marker <- Heatmap(data.matrix.w, name = "Cell-type signature",
+bulkdata.extra_marker.w.matrix.top_summary <- Heatmap(data.matrix.w, name = "Cell-type signature",
+                                 use_raster = FALSE,
+                                 cluster_columns = FALSE,
+                                 column_dend_reorder = TRUE,
+                                 cluster_rows = TRUE,#
+                                 row_dend_reorder = TRUE,#
+                                 show_column_names = TRUE,
+                                 show_row_names = FALSE,
+                                 row_km = 5,
+                                 clustering_distance_rows = "pearson",
+                                 #column_split = column.values$column.names,
+                                 #row_split = top.markers.detailed_all$group,
+                                 #row_labels = top.markers.detailed_all$gene_name,
+                                 row_names_gp = gpar(fontsize = 7),
+                                 column_names_gp = gpar(fontsize = 7),
+                                 #left_annotation = ha.rows.left, 
+                                 #right_annotation = ha.rows.right.v2,
+                                 #top_annotation = ha.columns,
+                                 column_dend_height = unit(90, "mm"), 
+                                 row_dend_width =  unit(60, "mm"), 
+                                 column_title_rot = 90,
+                                 row_title = 'Marker genes'
+)
+
+plot(bulkdata.extra_marker.w.matrix.top_summary)
+
+#save_plot_as_pdf(bulkdata.extra_marker.w.matrix.top_summary, 'bulkdata.extra_marker.w.matrix.top_summary.pdf', 6, 10)
+
+```
+
+```{r matrix.w.top, fig.width=6, fig.height=50}
+
+data.matrix.w <- deco.alpha.beta.zero.results.partial.top$w
+data.matrix.w <- log1p((data.matrix.w))
+
+
+bulkdata.extra_marker.w.matrix.top <- Heatmap(data.matrix.w, name = "Cell-type signature",
                                  use_raster = FALSE,
                                  cluster_columns = FALSE,
                                  column_dend_reorder = TRUE,
@@ -4781,7 +5547,7 @@ bulkdata.extra_marker <- Heatmap(data.matrix.w, name = "Cell-type signature",
                                  #column_split = column.values$column.names,
                                  #row_split = top.markers.detailed_all$group,
                                  #row_labels = top.markers.detailed_all$gene_name,
-                                 row_names_gp = gpar(fontsize = 8),
+                                 row_names_gp = gpar(fontsize = 7),
                                  column_names_gp = gpar(fontsize = 7),
                                  #left_annotation = ha.rows.left, 
                                  #right_annotation = ha.rows.right.v2,
@@ -4792,12 +5558,14 @@ bulkdata.extra_marker <- Heatmap(data.matrix.w, name = "Cell-type signature",
                                  row_title = 'Marker genes'
 )
 
-plot(bulkdata.extra_marker)
+plot(bulkdata.extra_marker.w.matrix.top)
+
+#save_plot_as_pdf(bulkdata.extra_marker.w.matrix.top, 'bulkdata.extra_marker.w.matrix.top.pdf', 6, 50)
 
 ```
 
 
-Finally, let's calculate the relative proportions based on the unknown celltype to correct everything...
+Now I will analyze the markers of the reference matrix with an Enritchment analysis.
 ```{r}
 
 ```
@@ -4808,8 +5576,8 @@ Finally, let's calculate the relative proportions based on the unknown celltype 
 Let's put together the marker genes from the flat deconvolution and the differential expressed genes.
 ```{r final.list.genes.cds}
 black_list_genes <- c() #Xist?
-de_genes.thymus.total <- de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT
-de_genes.thymus <- de_genes.thymus.total[de_genes.thymus.total %in% black_list_genes == FALSE]
+#de_genes.thymus.total <- de_genes.thymus.treatment_Thy_ALKpos_KO_vs_Thy_WT
+#de_genes.thymus <- de_genes.thymus.total[de_genes.thymus.total %in% black_list_genes == FALSE]
 
 #Let's create the w reference with all the genes and then we could see which are shared with the final_markers_partial_model
 # I don't use the one in the model becasue only has the marker genes in the reference and I need those  plus the Differential
@@ -4955,9 +5723,9 @@ eset.thymus.bulk.sparse.df.filtered[is.na(eset.thymus.bulk.sparse.df.filtered)] 
 eset.thymus.bulk.sparse.df.filtered[eset.thymus.bulk.sparse.df.filtered==0] <- 0.0000000001
 
 #Replacing zeros and nulls with a small value.
-perc.meth.thymus.temp <- data.frame(perc.meth.thymus.filtered.marker.genes.partial.cds) # 2,290
-perc.meth.thymus.temp[is.na(perc.meth.thymus.temp)] <- 0.00000000001
-bulk_data_meth <- perc.meth.thymus.temp[, standard_name_thymus]
+#perc.meth.thymus.temp <- data.frame(perc.meth.thymus.filtered.marker.genes.partial.cds) # 2,290
+#perc.meth.thymus.temp[is.na(perc.meth.thymus.temp)] <- 0.00000000001
+#bulk_data_meth <- perc.meth.thymus.temp[, standard_name_thymus]
 
 proportion_constraint_h = TRUE
 
@@ -4966,13 +5734,13 @@ start_time <- Sys.time()
 # I run the deconvolution without any other parameter
 deco.alpha.beta.zero.results.partial.cds <- run_complete_deconvolution(
   x_matrix = data.frame(eset.thymus.bulk.sparse.df.filtered[c(final_markers_partial_model, extra_marker_genes_semireference), standard_name_thymus]),
-  y_matrix = data.frame(bulk_data_meth),
+  #y_matrix = data.frame(bulk_data_meth),
   z_matrix = NULL,
   k = 3,
-  alpha = 0.00001, 
+  #alpha = 0.00001, 
   beta = 0,
-  delta_threshold=1e-10, 
-  max_iterations=8000, 
+  delta_threshold=1e-15, 
+  max_iterations=15000, 
   #I have to deactivate the sum 1 because that is just for the 3 cell types
   proportion_constraint_h = proportion_constraint_h,
   partial_w_fixed=data.frame(partial_w_fixed[c(final_markers_partial_model, extra_marker_genes_semireference), ]),
@@ -4983,7 +5751,12 @@ deco.alpha.beta.zero.results.partial.cds <- run_complete_deconvolution(
 
 end_time <- Sys.time()
 end_time - start_time
+
+#save(deco.alpha.beta.zero.results.partial.cds, file = paste0('/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/', 'deco.alpha.beta.zero.results.partial.cds.Rdata'))
+
 ```
+
+
 Analysis of proportions
 ```{r proportions.assignment}
 colSums(deco.alpha.beta.zero.results.partial.cds$h[1:2,])
@@ -5069,7 +5842,7 @@ thymus.proportions.deconvolution.summarized.melt <- rbind(thymus.proportions.sum
 # assign values to zero
 #thymus.proportions.deconvolution.summarized.melt$value[thymus.proportions.deconvolution.summarized.melt$value < 0.01] = 0.01
 
-p <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.deconvolution.summarized.melt$type_normalized %in% c('Ctrl', 'KO', 'ALK', 'ALKKO', '6_8w_thymus') & thymus.proportions.deconvolution.summarized.melt$cluster_name %in% list_pseudotime,], aes(x=cluster_name, y=value, color=type_normalized)) +
+plot_proportions_cds_semireference.1.unknown <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.deconvolution.summarized.melt$type_normalized %in% c('Ctrl', 'KO', 'ALK', 'ALKKO', '6_8w_thymus') & thymus.proportions.deconvolution.summarized.melt$cluster_name %in% list_pseudotime,], aes(x=cluster_name, y=value, color=type_normalized)) +
   geom_point(size=4, shape=20, alpha = .30, position=position_jitter(width=.3,height=.00)) +
   labs(title=NULL,x="Cell Type", y = "Proportion") + theme_linedraw() + 
     theme(axis.text.x = element_text(angle = 45, hjust = 1), 
@@ -5078,11 +5851,11 @@ p <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.
           legend.text = element_text(size = 16)) + 
   ylim(-0.1, 1.0)
  
-p <- p +  scale_color_manual(name = "Sample", breaks = c('6_8w_thymus', 'Ctrl', 'KO', 'ALK', 'ALKKO'), values = c("darkgrey", "#136c38", "blue", "red", "orange")) + theme_light()
+plot_proportions_cds_semireference.1.unknown <- plot_proportions_cds_semireference.1.unknown +  scale_color_manual(name = "Sample", breaks = c('6_8w_thymus', 'Ctrl', 'KO', 'ALK', 'ALKKO'), values = c("darkgrey", "#136c38", "blue", "red", "orange")) + theme_light()
 
-p
+plot(plot_proportions_cds_semireference.1.unknown)
 
-save_plot_as_pdf(p, 'plot_proportions_cds_semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 8, 5)
+#save_plot_as_pdf(plot_proportions_cds_semireference.1.unknown, 'plot_proportions_cds_semireference.1.unknown.pdf', 8, 5)
 
 ```
 ```{r data.markers.top}
@@ -5092,7 +5865,7 @@ top.level.1.markers.detailed_cds <- create_dataset_markers_multiple_levels(
   level_list = c('cluster_6', 'cluster_7'))
 ```
 
-```{r heatmap.level.top.semireference, fig.height=8, fig.width=15}
+```{r heatmap.level.top.semireference, fig.height=34, fig.width=15}
 
 #Creation of genes for the new unknown celltype
 top.level.1.markers.detailed_cds.unknown <- data.frame(cbind(extra_marker_genes_semireference, 'cluster_unknown', TRUE))
@@ -5119,22 +5892,58 @@ plot.level.cds.semireference <- plot_heatmap_markers_multiple_level(
                      show_legends = TRUE
                      )
 
-save_plot_as_pdf(plot.level.cds.semireference$plot, 'plot.level.cds.semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 20, 15)
+#save_plot_as_pdf(plot.level.cds.semireference$plot, 'plot.level.cds.semireference_de_Thy_ALKpos_KO_vs_Thy_WT.pdf', 20, 15)
 
 #Saving the extra marker genes.
 library("writexl")
 path <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/'
-write_xlsx(top.level.1.markers.detailed_cds.plus.unknown,paste0(path, "top.level.1.markers.detailed_cds.unknown.xlsx"))
+#write_xlsx(top.level.1.markers.detailed_cds.plus.unknown,paste0(path, "top.level.1.markers.detailed_cds.unknown.xlsx"))
 
 ```
+
+```{r matrix.w.cds, fig.width=6, fig.height=50}
+
+data.matrix.w.cds <- deco.alpha.beta.zero.results.partial.cds$w
+data.matrix.w.cds <- log1p((data.matrix.w.cds))
+
+
+bulkdata.extra_marker.w.matrix.cds <- Heatmap(data.matrix.w.cds, name = "Cell-type signature",
+                                 use_raster = FALSE,
+                                 cluster_columns = FALSE,
+                                 column_dend_reorder = TRUE,
+                                 cluster_rows = TRUE,#
+                                 row_dend_reorder = TRUE,#
+                                 show_column_names = TRUE,
+                                 row_km = 3,
+                                 clustering_distance_rows = "pearson",
+                                 #column_split = column.values$column.names,
+                                 #row_split = top.markers.detailed_all$group,
+                                 #row_labels = top.markers.detailed_all$gene_name,
+                                 row_names_gp = gpar(fontsize = 7),
+                                 column_names_gp = gpar(fontsize = 7),
+                                 #left_annotation = ha.rows.left, 
+                                 #right_annotation = ha.rows.right.v2,
+                                 #top_annotation = ha.columns,
+                                 column_dend_height = unit(90, "mm"), 
+                                 row_dend_width =  unit(60, "mm"), 
+                                 column_title_rot = 90,
+                                 row_title = 'Marker genes'
+)
+
+plot(bulkdata.extra_marker.w.matrix.cds)
+
+#save_plot_as_pdf(bulkdata.extra_marker.w.matrix.cds, 'bulkdata.extra_marker.w.matrix.cds.pdf', 6, 50)
+
+```
+
 
 ## 5.3. Partial deconvolution: DP
 
 Let's put together the marker genes from the flat deconvolution and the differential expressed genes.
 ```{r final.list.genes.dp}
 black_list_genes <- c() #Xist?
-de_genes.thymus.total <- de_genes.thymus.treatment_Thy_KO_vs_Thy_WT
-de_genes.thymus <- de_genes.thymus.total[de_genes.thymus.total %in% black_list_genes == FALSE]
+#de_genes.thymus.total <- de_genes.thymus.treatment_Thy_KO_vs_Thy_WT
+#de_genes.thymus <- de_genes.thymus.total[de_genes.thymus.total %in% black_list_genes == FALSE]
 
 #Let's create the w reference with all the genes and then we could see which are shared with the final_markers_partial_model
 # I don't use the one in the model becasue only has the marker genes in the reference and I need those  plus the Differential
@@ -5182,11 +5991,12 @@ final_markers_partial_model <- shared.final.vs.w
 
 Now we can create the partial references with ONE fixed cell-type
 ```{r creation.mask.matrices.h.w.one.celltype.dp}
+unknown_celltypes.dp <- 4
 
 # I have n genes as rows and m+1 columns, being the last one the unknown one. 
-mask_h <- matrix(FALSE, nrow = (4+1), ncol = 12)
+mask_h <- matrix(FALSE, nrow = (4 + unknown_celltypes.dp), ncol = 12)
 colnames(mask_h) <- standard_name_thymus
-rownames(mask_h) <- paste0('cluster_', c(2:5, 'unknown'))
+rownames(mask_h) <- c(paste0('cluster_', c(2:5)), paste0('unknown_', 1:unknown_celltypes.dp))
 
 # In this case, I can do two things: 1. Fix just the celltypes that I have as reference and the unknown leave it as black. 2. Assign the unknown cell-type as zero, since it suppose to be a WT, and then in the other conditions it will appear a proportion. Also the Tumor DNMT1 KO, will be similar to WT.
 version <- 'two'
@@ -5195,16 +6005,16 @@ if(version=='one'){
   mask_h[1:4,1:3] <- TRUE
 }else if(version=='two'){
   #Version 1.
-  mask_h[1:5,1:3] <- TRUE
+  mask_h[1:(4+unknown_celltypes.dp),1:3] <- TRUE
 }
 
 
 
 
 #Now let's put the proportions that I needed, filling with zeros the rest
-partial_h_fixed <- matrix(0, nrow = (4+1), ncol = 12)
+partial_h_fixed <- matrix(0, nrow = (4 + unknown_celltypes.dp), ncol = 12)
 colnames(partial_h_fixed) <- standard_name_thymus
-rownames(partial_h_fixed) <- paste0('cluster_', c(2:5, 'unknown'))
+rownames(partial_h_fixed) <- c(paste0('cluster_', c(2:5)), paste0('unknown_', 1:unknown_celltypes.dp))
 #let's take the proportion
 proportions_wt_single_cell <- as.data.frame(deco.simulation.thymus.tree_guided.recursive.reduced.results.cds$pseudo.bulk.data$truep) 
 colnames(proportions_wt_single_cell) <- c('sample_6_8W')
@@ -5213,6 +6023,7 @@ proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(2:5)) ]
 
 #Scale to 1
 proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(2:5))] <- proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(2:5))]/sum(proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(2:5))])
+sum(proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(2:5))] )
 
 #Since I have three replicates I have to fix the proportions three times
 partial_h_fixed[1:4,1] <- as.matrix(proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(2:5)) ])
@@ -5226,18 +6037,21 @@ partial_h_fixed[1:4,3] <- as.matrix(proportions_wt_single_cell['sample_6_8W', pa
 #Now I will create the W
 mask_w <- matrix(TRUE, 
                  nrow = (length(final_markers_partial_model) + length(extra_marker_genes_semireference)), 
-                 ncol = (4+1))
-colnames(mask_w) <- paste0('cluster_', c(2:5, 'unknown'))
+                 ncol = (4 + unknown_celltypes.dp))
+colnames(mask_w) <- c(paste0('cluster_', c(2:5)), paste0('unknown_', 1:unknown_celltypes.dp))
 rownames(mask_w) <- c(final_markers_partial_model, extra_marker_genes_semireference)
-mask_w[(length(final_markers_partial_model)+1):nrow(mask_w), 1:5] <- FALSE
-mask_w[1:length(final_markers_partial_model), (4+1)] <- FALSE
+mask_w[1:length(final_markers_partial_model), (4+1):(4+unknown_celltypes.dp)] <- FALSE
+mask_w[(length(final_markers_partial_model)+1):nrow(mask_w), 1:(4+unknown_celltypes.dp)] <- FALSE
+
+
+
 
 # I have k cell-types rows by m samples. I want to add the same proportions to the first three wild-type samples corresponding to the 
 # '6_8W' time points
 partial_w_fixed <- matrix(0, 
                           nrow = (length(final_markers_partial_model) + length(extra_marker_genes_semireference)), 
-                          ncol = (4+1))
-colnames(partial_w_fixed) <- paste0('cluster_', c(2:5, 'unknown'))
+                          ncol = (4 + unknown_celltypes.dp))
+colnames(partial_w_fixed) <- c(paste0('cluster_', c(2:5)), paste0('unknown_', 1:unknown_celltypes.dp))
 rownames(partial_w_fixed) <-  c(final_markers_partial_model, extra_marker_genes_semireference)
 
 #Let's filter the w matrix reference (partially)
@@ -5280,9 +6094,9 @@ eset.thymus.bulk.sparse.df.filtered[is.na(eset.thymus.bulk.sparse.df.filtered)] 
 eset.thymus.bulk.sparse.df.filtered[eset.thymus.bulk.sparse.df.filtered==0] <- 0.0000000001
 
 #Replacing zeros and nulls with a small value.
-perc.meth.thymus.temp <- data.frame(perc.meth.thymus.filtered.marker.genes.partial.dp) # 2,290
-perc.meth.thymus.temp[is.na(perc.meth.thymus.temp)] <- 0.00000000001
-bulk_data_meth <- perc.meth.thymus.temp[, standard_name_thymus]
+#perc.meth.thymus.temp <- data.frame(perc.meth.thymus.filtered.marker.genes.partial.dp) # 2,290
+#perc.meth.thymus.temp[is.na(perc.meth.thymus.temp)] <- 0.00000000001
+#bulk_data_meth <- perc.meth.thymus.temp[, standard_name_thymus]
 
 proportion_constraint_h = TRUE
 
@@ -5291,13 +6105,14 @@ start_time <- Sys.time()
 # I run the deconvolution without any other parameter
 deco.alpha.beta.zero.results.partial.dp <- run_complete_deconvolution(
   x_matrix = data.frame(eset.thymus.bulk.sparse.df.filtered[c(final_markers_partial_model, extra_marker_genes_semireference), standard_name_thymus]),
-  y_matrix = data.frame(bulk_data_meth),
+  #y_matrix = data.frame(bulk_data_meth),
+  y_matrix = NULL,
   z_matrix = NULL,
-  k = 5,
-  alpha = 0.00001, 
+  k = 4 + unknown_celltypes.dp,
+  #alpha = 0.00001, 
   beta = 0,
-  delta_threshold=1e-10, 
-  max_iterations=8000, 
+  delta_threshold=1e-15, 
+  max_iterations=15000, 
   #I have to deactivate the sum 1 because that is just for the 3 cell types
   proportion_constraint_h = proportion_constraint_h,
   partial_w_fixed=data.frame(partial_w_fixed[c(final_markers_partial_model, extra_marker_genes_semireference), ]),
@@ -5308,6 +6123,9 @@ deco.alpha.beta.zero.results.partial.dp <- run_complete_deconvolution(
 
 end_time <- Sys.time()
 end_time - start_time
+
+#save(deco.alpha.beta.zero.results.partial.dp, file = paste0('/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/', 'deco.alpha.beta.zero.results.partial.dp_four_unknown.Rdata'))
+#load(paste0('/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/', 'deco.alpha.beta.zero.results.partial.dp_one_unknown.Rdata'))
 ```
 
 Analysis of proportions
@@ -5336,15 +6154,24 @@ prop_recal
 
 Comparison between the actual proportions of the single-cell data and the estimated proportions of the bulk thymus data, specifically with the Ctrl sample.
 ```{r plot_comparison_ctrl_proportion.flat.model.dp}
-order_normalized <- paste0('cluster_', c('2','3', '4', '5', 'unknown'))
+order_normalized <- c(paste0('cluster_', c(2:5)), paste0('unknown_', 1:unknown_celltypes.dp))
 order_samples <- c('sample_6_8W')
-list_pseudotime <- c("2preDP", "3DPbla", "4DPre", "5DPsel", 'unknown')
+list_pseudotime <- c("2preDP", "3DPbla", "4DPre", "5DPsel", paste0('unknown_', 1:unknown_celltypes.dp))
 
 #Calculate the proportion for clusters for 2 clusters
 real_proportion <- as.data.frame(deco.simulation.thymus.tree_guided.recursive.reduced.results.dp$pseudo.bulk.data$truep)
 real_proportion <- t(real_proportion)
 rownames(real_proportion) <- c('sample_6_8W')
-real_proportion <- cbind(real_proportion, 'cluster_unknown'=0)
+
+
+#Initialization of extra clusters unknown
+for(extra in 1:unknown_celltypes.dp){
+  names_temp <- c(colnames(real_proportion), paste0('unknown_', extra))
+  real_proportion <- cbind(real_proportion, 0)
+  colnames(real_proportion) <- names_temp
+}
+
+#real_proportion <- cbind(real_proportion, 'cluster_unknown'=0)
 
 
 
@@ -5395,7 +6222,7 @@ thymus.proportions.deconvolution.summarized.melt <- rbind(thymus.proportions.sum
 # assign values to zero
 #thymus.proportions.deconvolution.summarized.melt$value[thymus.proportions.deconvolution.summarized.melt$value < 0.01] = 0.01
 
-p <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.deconvolution.summarized.melt$type_normalized %in% c('Ctrl', 'KO', 'ALK', 'ALKKO', '6_8w_thymus') & thymus.proportions.deconvolution.summarized.melt$cluster_name %in% list_pseudotime,], aes(x=cluster_name, y=value, color=type_normalized)) +
+plot_proportions_dp_semireference.1.unknown <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.deconvolution.summarized.melt$type_normalized %in% c('Ctrl', 'KO', 'ALK', 'ALKKO', '6_8w_thymus') & thymus.proportions.deconvolution.summarized.melt$cluster_name %in% list_pseudotime,], aes(x=cluster_name, y=value, color=type_normalized)) +
   geom_point(size=4, shape=20, alpha = .30, position=position_jitter(width=.3,height=.00)) +
   labs(title=NULL,x="Cell Type", y = "Proportion") + theme_linedraw() + 
     theme(axis.text.x = element_text(angle = 45, hjust = 1), 
@@ -5404,11 +6231,11 @@ p <- ggplot(thymus.proportions.deconvolution.summarized.melt[thymus.proportions.
           legend.text = element_text(size = 16)) + 
   ylim(-0.1, 1.0)
  
-p <- p +  scale_color_manual(name = "Sample", breaks = c('6_8w_thymus', 'Ctrl', 'KO', 'ALK', 'ALKKO'), values = c("darkgrey", "#136c38", "blue", "red", "orange")) + theme_light()
+plot_proportions_dp_semireference.1.unknown <- plot_proportions_dp_semireference.1.unknown +  scale_color_manual(name = "Sample", breaks = c('6_8w_thymus', 'Ctrl', 'KO', 'ALK', 'ALKKO'), values = c("darkgrey", "#136c38", "blue", "red", "orange")) + theme_light()
 
-p
+plot_proportions_dp_semireference.1.unknown
 
-save_plot_as_pdf(p, 'plot_proportions_dp_semireference_de_Thy_KO_vs_Thy_WT.pdf', 8, 5)
+#save_plot_as_pdf(plot_proportions_dp_semireference.1.unknown, 'plot_proportions_dp_semireference.1.unknown.pdf', 8, 5)
 
 ```
 
@@ -5447,16 +6274,49 @@ plot.level.dp.semireference <- plot_heatmap_markers_multiple_level(
                      show_legends = TRUE
                      )
 
-save_plot_as_pdf(plot.level.dp.semireference$plot, 'plot.level.dp.semireference_de_Thy_Thy_KO_vs_Thy_WT.pdf', 20, 15)
+#save_plot_as_pdf(plot.level.dp.semireference$plot, 'plot.level.dp.semireference_de_Thy_Thy_KO_vs_Thy_WT.pdf', 20, 15)
 
 #Saving the extra marker genes.
 library("writexl")
 path <- '/Users/crhisto/Documents/GitHub/DecoFlex/DecoFlexR/vignettes/figures_manuscript/'
-write_xlsx(top.level.1.markers.detailed_dp.plus.unknown,paste0(path, "top.level.1.markers.detailed_dp.plus.unknown.xlsx"))
+#write_xlsx(top.level.1.markers.detailed_dp.plus.unknown,paste0(path, "top.level.1.markers.detailed_dp.plus.unknown.xlsx"))
 
 ```
 
+```{r matrix.w.dp, fig.width=6, fig.height=65}
 
+data.matrix.w.dp <- deco.alpha.beta.zero.results.partial.dp$w
+data.matrix.w.dp <- log1p((data.matrix.w.dp))
+
+
+bulkdata.extra_marker.w.matrix.dp <- Heatmap(data.matrix.w.dp, name = "Cell-type signature",
+                                 use_raster = FALSE,
+                                 cluster_columns = FALSE,
+                                 column_dend_reorder = TRUE,
+                                 cluster_rows = TRUE,#
+                                 row_dend_reorder = TRUE,#
+                                 show_column_names = TRUE,
+                                 row_km = 5,
+                                 clustering_distance_rows = "pearson",
+                                 #column_split = column.values$column.names,
+                                 #row_split = top.markers.detailed_all$group,
+                                 #row_labels = top.markers.detailed_all$gene_name,
+                                 row_names_gp = gpar(fontsize = 7),
+                                 column_names_gp = gpar(fontsize = 7),
+                                 #left_annotation = ha.rows.left, 
+                                 #right_annotation = ha.rows.right.v2,
+                                 #top_annotation = ha.columns,
+                                 column_dend_height = unit(90, "mm"), 
+                                 row_dend_width =  unit(60, "mm"), 
+                                 column_title_rot = 90,
+                                 row_title = 'Marker genes'
+)
+
+plot(bulkdata.extra_marker.w.matrix.dp)
+
+#save_plot_as_pdf(bulkdata.extra_marker.w.matrix.dp, 'bulkdata.extra_marker.w.matrix.dp.pdf', 6, 65)
+
+```
 
 
 
