@@ -456,6 +456,8 @@ run_deconvolution_tree_guided_recursive <- function(
     max_iterations = 10000,
     delta_threshold = 1e-10,
     markers.clusters.parameter = NULL,
+    use_global_makers = FALSE,
+    global_markers_object = NULL,
     verbose = FALSE){
 
   message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
@@ -565,6 +567,8 @@ run_deconvolution_tree_guided_recursive <- function(
       percentile_markers = percentile_markers,
       min_delta_cor_threshold = min_delta_cor_threshold.use,
       percentile_markers.min_corr = percentile_markers.min_corr,
+      use_global_makers = use_global_makers,
+      global_markers_object = global_markers_object,
       verbose = verbose)
   }else{
     markers.top.clusters.object <- markers.clusters.parameter.use
@@ -753,6 +757,7 @@ run_deconvolution_tree_guided_recursive <- function(
         max_iterations = max_iterations,
         delta_threshold = delta_threshold,
         percentile_markers.min_corr = percentile_markers.min_corr,
+        global_markers_object = markers.top.clusters.object$list_markers,
         verbose = verbose)
 
     }else if(length(subclusters_list) == 1){
@@ -1706,6 +1711,8 @@ calculate_markers <- function(single_cell_data_exp,
                               percentile_markers = NULL,
                               min_delta_cor_threshold = 0.05,
                               percentile_markers.min_corr = NULL,
+                              use_global_makers = FALSE,
+                              global_markers_object = NULL,
                               verbose = TRUE){
 
   print(paste0('calculate_markers with verbose = ', verbose))
@@ -1976,8 +1983,25 @@ calculate_markers <- function(single_cell_data_exp,
 
   # 6. Check with min_cor strategy.
   if(use_min_cor_strategy){
+    
+    # I will send the always the complete model, but the rest will be based on 
+    # the celltypes of the level.
+    list_markers.param <- NULL
+    #If we mark the use_global_makers parameter, I will use the previous markers
+    # in the global configuration but filtering the celltypes
+    if(use_global_makers && !is.null(global_markers_object)){
+      #For the min correlation analysis for the specific celltypes
+      list_markers.param <- global_markers_object[list_groups]
+      #For the global results, needed for the next level with all celltypes.
+      list_markers <- global_markers_object
+      print(paste0('Using global markers filtered: ', list_groups))
+    }else{
+      print('Using markers for each level.')
+      list_markers.param <- list_markers
+    }
+    
     results.min.corr <- calculate_min_correlation_incremental_markers(
-      list_markers = list_markers,
+      list_markers = list_markers.param,
       reference = reference,
       minimum_markers = minimum_markers,
       min_delta_cor_threshold = min_delta_cor_threshold,
