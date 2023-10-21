@@ -723,6 +723,8 @@ run_deconvolution_tree_guided_recursive <- function(
     # 6.2. This is just a double check since both list must coincide.
     if(length(intersect(subclusters_list, current_hierarchy$celltype_list)) !=
        length(current_hierarchy$celltype_list)){
+      message(paste0("subclusters_list: ", subclusters_list))
+      message(paste0("current_hierarchy$celltype_list: ", current_hierarchy$celltype_list))
       stop(paste0('The hierarchy definition does not coincide with the single cell ',
                   'data. Check input parameters.'))
     }
@@ -1988,15 +1990,20 @@ calculate_markers <- function(single_cell_data_exp,
     # the celltypes of the level.
     list_markers.param <- NULL
     #If we mark the use_global_makers parameter, I will use the previous markers
-    # in the global configuration but filtering the celltypes
-    if(use_global_makers && !is.null(global_markers_object)){
+    # in the global configuration but filtering the celltypes. This also
+    # can be done just when is a final level with the same names of the original
+    # celltypes.
+    if(use_global_makers && 
+       !is.null(global_markers_object) &&
+       (list_groups %in% names(global_markers_object))){
       #For the min correlation analysis for the specific celltypes
       list_markers.param <- global_markers_object[list_groups]
       #For the global results, needed for the next level with all celltypes.
       list_markers <- global_markers_object
-      print(paste0('Using global markers filtered: ', list_groups))
+      message(paste0('Using global markers filtered: ', list_groups))
     }else{
       print('Using markers for each level.')
+      message(paste0(use_global_makers, ', ', list_groups, ', ', names(global_markers_object)))
       list_markers.param <- list_markers
     }
     
