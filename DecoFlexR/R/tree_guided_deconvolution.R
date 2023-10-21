@@ -539,6 +539,45 @@ run_deconvolution_tree_guided_recursive <- function(
     top_clusters_var <- sub_clusters_var
   }
 
+  # First I have to calculate the globla markers
+  if(hierarchy$tree_level == "0"){
+    
+    message('Calculating global markers...')
+    # 1. Create the reference for the top clustering configuration
+    reference_w.global.cluster <- decoflex_build_cell_reference(
+      x = single_cell_data_exp,
+      ct.sub = hierarchy$celltype_list,
+      ct.varname = sub_clusters_var,
+      sample = sample,
+      verbose = verbose)
+    
+    # 2. Calculate the global marker genes
+    markers.global.clusters.object <- calculate_markers(
+      single_cell_data_exp = single_cell_data_exp,
+      reference = reference_w.global.cluster$basis,
+      group_clusters_var = sub_clusters_var,
+      use_min_cor_strategy = use_min_cor_strategy,
+      delete_shared_internal_markers = delete_shared_internal_markers,
+      filter_markers = filter_markers,
+      param.logfc.threshold = param.logfc.threshold.use,
+      param.p_val_adj = param.p_val_adj.use,
+      test.use.value = test.use.value,
+      marker_strategy = marker_strategy,
+      ordering_strategy = ordering_strategy,
+      minimum_markers = minimum_markers.use,
+      percentile_markers = percentile_markers,
+      min_delta_cor_threshold = min_delta_cor_threshold.use,
+      percentile_markers.min_corr = percentile_markers.min_corr,
+      use_global_makers = FALSE,
+      global_markers_object = NULL,
+      verbose = verbose)
+    
+    global_markers_object <- markers.global.clusters.object$list_markers
+  }else{
+    message('Keeping the global_markers_object from the parameter.')
+  }
+
+  
   # 1. Create the reference for the top clustering configuration
   reference_w.top.cluster <- decoflex_build_cell_reference(
     x = single_cell_data_exp,
@@ -546,7 +585,7 @@ run_deconvolution_tree_guided_recursive <- function(
     ct.varname = top_clusters_var,
     sample = sample,
     verbose = verbose)
-
+  
   # 2. Calculate the Marker genes for the top clusters
   # In this case, I can pass the object as parameter
   markers.top.clusters.object <- NULL
@@ -759,7 +798,8 @@ run_deconvolution_tree_guided_recursive <- function(
         max_iterations = max_iterations,
         delta_threshold = delta_threshold,
         percentile_markers.min_corr = percentile_markers.min_corr,
-        global_markers_object = markers.top.clusters.object$list_markers,
+        use_global_makers = use_global_makers,
+        global_markers_object = global_markers_object,
         verbose = verbose)
 
     }else if(length(subclusters_list) == 1){
@@ -1993,6 +2033,9 @@ calculate_markers <- function(single_cell_data_exp,
     # in the global configuration but filtering the celltypes. This also
     # can be done just when is a final level with the same names of the original
     # celltypes.
+    message(paste0(use_global_makers, ' -- ',
+                   paste(shQuote(list_groups), collapse=", "), ' -- ',
+                   paste(shQuote(names(global_markers_object)), collapse=", "), ' -- '))
     if(use_global_makers && 
        !is.null(global_markers_object) &&
        (list_groups %in% names(global_markers_object))){
@@ -2003,7 +2046,9 @@ calculate_markers <- function(single_cell_data_exp,
       message(paste0('Using global markers filtered: ', list_groups))
     }else{
       print('Using markers for each level.')
-      message(paste0(use_global_makers, ', ', list_groups, ', ', names(global_markers_object)))
+      message(paste0(use_global_makers, ' -- ',
+                     paste(shQuote(list_groups), collapse=", "), ' -- ',
+                     paste(shQuote(names(global_markers_object)), collapse=", "), ' -- '))
       list_markers.param <- list_markers
     }
     
