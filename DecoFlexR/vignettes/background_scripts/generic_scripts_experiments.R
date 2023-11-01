@@ -1,6 +1,6 @@
 library(DecoFlex)
 
-run.decoflex <- function(single_cell_data_exp,  sub_clusters_var, hierarchy, bulk_data, max_iterations = 15000){
+run.decoflex <- function(single_cell_data_exp,  sub_clusters_var, hierarchy, bulk_data, max_iterations = 15000, param.logfc.threshold = 1.0){
   
   #Parameters for the simulation
   single_cell_data_exp <- single_cell_data_exp
@@ -26,7 +26,7 @@ run.decoflex <- function(single_cell_data_exp,  sub_clusters_var, hierarchy, bul
                                             ordering_strategy = ordering_strategy,
                                             delete_shared_level_markers = delete_shared_level_markers, 
                                             delete_shared_internal_markers = delete_shared_internal_markers,
-                                            param.logfc.threshold = 1.0,
+                                            param.logfc.threshold = param.logfc.threshold,
                                             param.p_val_adj = 0.05,
                                             minimum_markers = 4,
                                             min_delta_cor_threshold = 0.0,
@@ -128,33 +128,10 @@ calculate_correlation_CA.orig.celltype <- function(list_cell_types_CA.orig.cellt
   return(mean(diag(cor.calc.vs.true.CA.orig.celltype)))
 }
 
-list_cell_types_CA.orig.celltype <- c('Astro L1-6 FGFR3 SLC14A1', 'Exc L2 LAMP5 LTK', 'Exc L2-3 LINC00507 FREM3', 'Exc L3-4 RORB CARM1P1', 'Exc L3-5 RORB ESR1', 'Exc L4-5 RORB FOLH1B', 'Exc L4-6 FEZF2 IL26', 'Exc L4-6 RORB SEMA3E', 'Exc L5-6 FEZF2 ABO', 'Exc L5-6 FEZF2 EFTUD1P1', 'Exc L5-6 THEMIS C1QL3', 'Inh L1 SST NMBR', 'Inh L1-3 SST CALB1', 'Inh L1-4 LAMP5 LCP2', 'Inh L2-4 PVALB WFDC2', 'Inh L2-6 LAMP5 CA1', 'Oligo L1-6 OPALIN', 'OPC L1-6 PDGFRA')
-
-metrics.CA.orig.celltype <- NULL
-
-for(model_counter in 1:length(list_deco_CA_orig.celltype)){
-  model_name <- names(list_deco_CA_orig.celltype)[model_counter]
-  current_model <- list_deco_CA_orig.celltype[[model_name]]
-  print(model_name)
-  correlation_model <- calculate_correlation_CA.orig.celltype(list_cell_types_CA.orig.celltype, current_model, true.CA)
-  print(paste0('', correlation_model))
-  
-  last_iteration <- current_model$result_deco_top_cluster$running_info[nrow(current_model$result_deco_top_cluster$running_info),]
-  info_model <- data.frame("marker_count" = length(current_model$markers.top.clusters.object$total_markers),
-                           "r_correlation" = correlation_model, 
-                           "iteration" = last_iteration$iteration, 
-                           "delta_divergence_value" = last_iteration$delta_divergence_value)
-  
-  if(is.null(metrics.CA.orig.celltype)){
-    metrics.CA.orig.celltype <- info_model
-  }else{
-    metrics.CA.orig.celltype <- rbind(metrics.CA.orig.celltype, info_model)
-  }
-}
-
 
 create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type_names, bulk.data_mixtures.brain, 
-                                          w_fixed.value, marker_genes, extra_marker_genes_semireference.value = c(), version = 'three'){
+                                          w_fixed.value, marker_genes, extra_marker_genes_semireference.value = c(), version = 'one', 
+                                          fixed_h_values = NULL){
   
   
   #1. First, I will delete the marker genes from the additional ones to avoid problems in the x, w construction
@@ -193,35 +170,24 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
   
   # In this case, I can do two things: 1. Fix just the celltypes that I have as reference and the unknown leave it as black. 2. Assign the unknown cell-type as zero, since it suppose to be a WT, and then in the other conditions it will appear a proportion. Also the Tumor DNMT1 KO, will be similar to WT.
   if(version=='one'){
-    #Version 1.
-    #mask_h[1:3,1:3] <- TRUE
-  }else if(version=='two'){
-    #Version 1.
-    #mask_h[1:(3+extra_unknown_celltypes),1:3] <- TRUE
-    #Fixing all the proportions
-    #mask_h[1:3,4:12] <- TRUE
-  }else if(version=='three'){
     #nothing is fixed in h, therefore all values will be optimized
+  }else if(version=='two' & !is.null(fixed_h_values)){
+    #Fixing all the proportions that came in the fixed_h_values object
+    mask_h[1:(number_cell_types + extra_unknown_celltypes),1:ncol(fixed_h_values)] <- TRUE
+  }else if(version=='three'){
+    #nothing
   }
   
   
   #Now let's put the proportions that I needed, filling with zeros the rest
-  partial_h_fixed <- matrix(0, nrow = (number_cell_types + extra_unknown_celltypes), ncol = samples_bulk_data)
+  partial_h_fixed <- matrix(0, nrow = (number_cell_types + extra_unknown_celltypes), ncol =  samples_bulk_data)
   colnames(partial_h_fixed) <- bulk.column_names
   rownames(partial_h_fixed) <- c(cell_type_names, paste0('unknown_', 1:extra_unknown_celltypes))
   
   #In case we add known proportions.
-  if(version!='three'){
-    #let's take the proportion
-    # proportions_wt_single_cell <- as.data.frame(deco.simulation.thymus.tree_guided.recursive.reduced.results.top$pseudo.bulk.data$truep) 
-    # colnames(proportions_wt_single_cell) <- c('sample_6_8W')
-    # proportions_wt_single_cell <- t(proportions_wt_single_cell)
-    # proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(1:3)) ]
-    # 
-    # #Since I have three replicates I have to fix the proportions three times
-    # partial_h_fixed[1:3,1] <- as.matrix(proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(1:3)) ])
-    # partial_h_fixed[1:3,2] <- as.matrix(proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(1:3)) ])
-    # partial_h_fixed[1:3,3] <- as.matrix(proportions_wt_single_cell['sample_6_8W', paste0('cluster_', c(1:3)) ])
+  if(version=='two' & !is.null(fixed_h_values)){
+    partial_h_fixed[1:(number_cell_types + extra_unknown_celltypes),
+                    1:ncol(fixed_h_values)] <- as.matrix(fixed_h_values[c(cell_type_names, paste0('unknown_', 1:extra_unknown_celltypes)), ])
   }
   
   
@@ -292,19 +258,26 @@ run_deconvolution_decoflex_semi_reference <- function(bulk.data_mixtures.brain,
   return(deco.results)
 }
 
+#Check this: https://www.geeksforgeeks.org/smooth-data-for-a-geom_area-graph-using-ggplot2-in-r/
 plot_correlation_iterations <- function(data.correlation.all, 
                                         zoom.xlim = c(0, 55),
                                         red_line = 28,
                                         black_line = 155, 
-                                        color_lines = c('red', 'black')){
+                                        color_lines = c('red', 'black'), type = 'stacked'){
   correlation.vs.markers.selected.plot <- ggplot(data.correlation.all, aes(x = marker_count, y = joint_cor, group = celltype, color = celltype, fill = celltype)) +
     #geom_line() +
-    geom_area()+
     theme_bw() +
     theme(panel.border = invis, axis.line = element_line(), axis.title = element_text(size = 8), 
           axis.text = element_text(size = 8), legend.position = "right") + 
-    ylim(-1,1) + 
-    labs(x = 'Batch number of marker genes selected incrementally', y = 'Join correlation between celltypes')
+    ylim(-1,1)
+  
+  if(type == 'stacked'){
+    correlation.vs.markers.selected.plot <- correlation.vs.markers.selected.plot + geom_area(alpha = 0.7, position = "stack") +  
+      labs(x = 'Batch number of marker genes selected incrementally', y = 'Stacked join correlation between celltypes')
+  }else{
+    correlation.vs.markers.selected.plot <- correlation.vs.markers.selected.plot + geom_area(alpha = 0.5, position = "identity") + 
+      labs(x = 'Batch number of marker genes selected incrementally', y = 'Join correlation between celltypes')
+  }
   
   if(!is.null(red_line)){
     correlation.vs.markers.selected.plot <- correlation.vs.markers.selected.plot + geom_vline(xintercept=red_line,linetype = "dashed", colour = color_lines[1])
@@ -439,49 +412,24 @@ calculate_correlation_DM.merge1 <- function(list_cell_types_DM.merge1, deco.actu
   return(mean(diag(cor.calc.vs.true.DM.merge1)))
 }
 
-list_cell_types_DM.merge1 <- c("Astrocytes", "Endothelia", "Microglia", "Oligodendrocytes", "Neurons")
-
-metrics.DM.merge1 <- NULL
-
-for(model_counter in 1:length(list_deco_DM_merge1)){
-  model_name <- names(list_deco_DM_merge1)[model_counter]
-  current_model <- list_deco_DM_merge1[[model_name]]
-  print(model_name)
-  correlation_model <- calculate_correlation_DM.merge1(list_cell_types_DM.merge1, current_model, true.dm)
-  print(paste0('', correlation_model))
-  
-  last_iteration <- current_model$result_deco_top_cluster$running_info[nrow(current_model$result_deco_top_cluster$running_info),]
-  info_model <- data.frame("marker_count" = length(current_model$markers.top.clusters.object$total_markers),
-                           "r_correlation" = correlation_model, 
-                           "iteration" = last_iteration$iteration, 
-                           "delta_divergence_value" = last_iteration$delta_divergence_value)
-  
-  if(is.null(metrics.DM.merge1)){
-    metrics.DM.merge1 <- info_model
-  }else{
-    metrics.DM.merge1 <- rbind(metrics.DM.merge1, info_model)
-  }
-}
-
-
-run_deco_VL_merge2 <- function(data.correlation.all.VL.merge2, marker_value, max_iterations=25000){
+run_deco_VL <- function(data.correlation.all.VL, marker_value, max_iterations=25000, hierarchical_clustering_VL, sub_clusters_var = 'merge2', param.logfc.threshold = 1.0){
   
   markers.clusters.object <- list()
-  markers.clusters.object$accumulative_corr_markers <- data.correlation.all.VL.merge2
+  markers.clusters.object$accumulative_corr_markers <- data.correlation.all.VL
   markers.clusters.object$list_markers <- NULL
   markers.clusters.object$list_markers.percentile <- NULL
   
   #Adding just the markers that I'm interesting on.
-  marker_filtered <- data.correlation.all.VL.merge2[data.correlation.all.VL.merge2$current_marker == marker_value,]
+  marker_filtered <- data.correlation.all.VL[data.correlation.all.VL$current_marker == marker_value,]
   id_selected <- rownames(marker_filtered)[nrow(marker_filtered)]
-  markers.clusters.object$total_markers <- unique(data.correlation.all.VL.merge2$gene[1:id_selected])
+  markers.clusters.object$total_markers <- unique(data.correlation.all.VL$gene[1:id_selected])
   
   
   #Parameters for the simulation
   single_cell_data_exp <- eset.sc.sparse_VL
-  hierarchy = hierarchical_clustering_VL.merge2$`1`
+  hierarchy = hierarchical_clustering_VL$`1`
   bulk_data = data.frame(as.matrix(eset.sparse_pseudobulk_VL@assayData$exprs))
-  sub_clusters_var <- 'merge2'
+  sub_clusters_var <- sub_clusters_var
   sample <- 'Disorder' #just one value: Control
   use_min_cor_strategy = TRUE
   delete_shared_level_markers = FALSE
@@ -491,7 +439,7 @@ run_deco_VL_merge2 <- function(data.correlation.all.VL.merge2, marker_value, max
   start_time <- Sys.time()
   
   #let's run de simulation
-  deco.actual.data.VL.merge2_value <- 
+  deco.actual.data.VL.value <- 
     run_deconvolution_tree_guided_recursive(bulk_data = bulk_data,
                                             single_cell_data_exp = single_cell_data_exp, 
                                             hierarchy = hierarchy,
@@ -501,7 +449,7 @@ run_deco_VL_merge2 <- function(data.correlation.all.VL.merge2, marker_value, max
                                             ordering_strategy = ordering_strategy,
                                             delete_shared_level_markers = delete_shared_level_markers, 
                                             delete_shared_internal_markers = delete_shared_internal_markers,
-                                            param.logfc.threshold = 1.0,
+                                            param.logfc.threshold = param.logfc.threshold,
                                             param.p_val_adj = 0.05,
                                             minimum_markers = 4,
                                             min_delta_cor_threshold = 0.0,
@@ -514,7 +462,7 @@ run_deco_VL_merge2 <- function(data.correlation.all.VL.merge2, marker_value, max
   end_time <- Sys.time()
   end_time - start_time
   
-  return(deco.actual.data.VL.merge2_value)
+  return(deco.actual.data.VL.value)
 }
 
 
@@ -532,28 +480,4 @@ calculate_correlation_VL <- function(list_cell_types_VL.merge2, deco.actual.data
   cor.calc.vs.true.VL.merge2
   
   return(mean(diag(cor.calc.vs.true.VL.merge2)))
-}
-
-list_cell_types_VL.merge2 <- c("Astrocytes", "Excitatory", "Oligodendrocytes", "OPCs", "Microglia", "Inhibitory", "Endothelial")
-
-metrics.VL.merge2 <- NULL
-
-for(model_counter in 1:length(list_deco_VL_merge2)){
-  model_name <- names(list_deco_VL_merge2)[model_counter]
-  current_model <- list_deco_VL_merge2[[model_name]]
-  print(model_name)
-  correlation_model <- calculate_correlation_VL(list_cell_types_VL.merge2, current_model, true.VL)
-  print(paste0('', correlation_model))
-  
-  last_iteration <- current_model$result_deco_top_cluster$running_info[nrow(current_model$result_deco_top_cluster$running_info),]
-  info_model <- data.frame("marker_count" = length(current_model$markers.top.clusters.object$total_markers),
-                           "r_correlation" = correlation_model, 
-                           "iteration" = last_iteration$iteration, 
-                           "delta_divergence_value" = last_iteration$delta_divergence_value)
-  
-  if(is.null(metrics.VL.merge2)){
-    metrics.VL.merge2 <- info_model
-  }else{
-    metrics.VL.merge2 <- rbind(metrics.VL.merge2, info_model)
-  }
 }
