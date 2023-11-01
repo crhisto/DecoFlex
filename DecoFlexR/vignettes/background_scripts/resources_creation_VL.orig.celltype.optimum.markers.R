@@ -1,0 +1,2 @@
+root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/VL.orig.celltype/"
+save(eset.sc.sparse_VL, eset.sparse_pseudobulk_VL, file = paste0(root.dir, name_model, "resources_deco_VL_orig.celltype.rDAta"))
