@@ -75,7 +75,7 @@ print(paste0('Number of cores to use: ', no_cores))
 registerDoParallel(no_cores)
 
 #Runnning DecoFlex with different values of markers to see behaviour of R , iterations and convergence. Note: 4890=272 batch
-list_markers <- c('300', '3954', '4890')
+list_markers <- c('1000', '1200', '1500')
 all_deco_CA_orig.celltype <- NULL
 
 # For each cell-type dropped in the merge1 group, I will run the deconvolution
@@ -106,4 +106,4 @@ all_deco_CA_orig.celltype <- foreach(j = 1:length(list_markers),
 stopImplicitCluster()
 
 #Saving everything
-save(all_deco_CA_orig.celltype, file = paste0(root.dir, "all_deco_CA_orig.celltype.rda"))
+#save(all_deco_CA_orig.celltype, file = paste0(root.dir, "all_deco_CA_orig.celltype.rda"))

@@ -100,7 +100,11 @@ drop.exp0.complete <- foreach(j = 1:length(celltypes.exp0.merge_1_2),
     #Saving the object with the list of results
     save(drop.exp0.complete.temp, file = paste0(root.dir, celltype_name, "_Dropped_sub.exp0_Estimates.rda"))
     
-    assign(celltype_name, drop.exp0.complete.temp)
+    list_values_model <- list()
+    list_values_model[[celltype_name]] <- drop.exp0.complete.temp
+    
+    
+    assign(celltype_name, list_values_model)
     
     #Returning the object
     get0(celltype_name, ifnotfound = paste0('Object not found: ', celltype_name)) 
