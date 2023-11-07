@@ -1,7 +1,7 @@
-# The idea is to increment the celltypes deleted, therefore the references are going to be delete from the celltype with smaller size to the higher one.
+# The idea is to increment the celltypes deleted, therefore the references are going to be delete from the celltype with larger size to the higher one. (contraty to exp_4)
 
 #parameteres:
-root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/exp_4/"
+root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/exp_4a/"
 iterations_number <- 15000
 core_number <- 6
 
@@ -22,18 +22,18 @@ pseudo.eset.sc.sparse_VL.all.merge2 <- generateBulk_allcells(eset.sc.sparse_VL, 
 #2. Including generics functions.
 source("/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/background_scripts/generic_scripts_experiments.R")
 
-drop.exp4.complete <- drop.sub.exp4.complete <- list()
+drop.exp4a.complete <- drop.sub.exp4a.complete <- list()
 
 #Order based on celltype size
-celltypes.exp4.merge1 <- c("OPCs", "Microglia", "Endothelial", "Astrocytes", "Oligodendrocytes", "Neurons")
+celltypes.exp4a.merge1 <- c("Neurons", "Oligodendrocytes", "Astrocytes", "Endothelial", "Microglia", "OPCs")
 
-celltypes.exp4.merge1.obj <- list()
-celltypes.exp4.merge1.obj$one <- c("OPCs")
-celltypes.exp4.merge1.obj$two <- c("OPCs", "Microglia")
-celltypes.exp4.merge1.obj$three <- c("OPCs", "Microglia", "Endothelial")
-celltypes.exp4.merge1.obj$four <- c("OPCs", "Microglia", "Endothelial", "Astrocytes")
-celltypes.exp4.merge1.obj$five <- c("OPCs", "Microglia", "Endothelial", "Astrocytes", "Oligodendrocytes")
-celltypes.exp4.merge1.obj$six <- c("OPCs", "Microglia", "Endothelial", "Astrocytes", "Oligodendrocytes", "Neurons")
+celltypes.exp4a.merge1.obj <- list()
+celltypes.exp4a.merge1.obj$one <- c("Neurons")
+celltypes.exp4a.merge1.obj$two <- c("Neurons", "Oligodendrocytes")
+celltypes.exp4a.merge1.obj$three <- c("Neurons", "Oligodendrocytes", "Astrocytes")
+celltypes.exp4a.merge1.obj$four <- c("Neurons", "Oligodendrocytes", "Astrocytes", "Endothelial")
+celltypes.exp4a.merge1.obj$five <- c("Neurons", "Oligodendrocytes", "Astrocytes", "Endothelial", "Microglia")
+celltypes.exp4a.merge1.obj$six <- c("Neurons", "Oligodendrocytes", "Astrocytes", "Endothelial", "Microglia", "OPCs")
 
 print('Executing parallelized function...')
 
@@ -48,25 +48,25 @@ print(paste0('Number of cores to use: ', no_cores))
 
 registerDoParallel(no_cores)
 
-drop.exp4.complete <- NULL
+drop.exp4a.complete <- NULL
 
 # For each cell-type dropped in the merge1 group, I will run the deconvolution
 # Definition of the parallel function
-drop.exp4.complete <- foreach(j = 1:length(celltypes.exp4.merge1.obj),
+drop.exp4a.complete <- foreach(j = 1:length(celltypes.exp4a.merge1.obj),
                    .combine = c)  %dopar%
   {
     
-    celltype_name <- names(celltypes.exp4.merge1.obj)[j]
-    celltype_list_missing <- celltypes.exp4.merge1.obj[[celltype_name]]
+    celltype_name <- names(celltypes.exp4a.merge1.obj)[j]
+    celltype_list_missing <- celltypes.exp4a.merge1.obj[[celltype_name]]
 
     
     
-    drop.exp4.complete.temp <- NULL
+    drop.exp4a.complete.temp <- NULL
     
     print(paste0('Running Decoflex deleting merge1: ', paste(shQuote(celltype_list_missing), collapse=", ")))
     
     # 1. Filtering the deleted celltype
-    rest_celltypes <- celltypes.exp4.merge1[!(celltypes.exp4.merge1 %in% celltype_list_missing)]
+    rest_celltypes <- celltypes.exp4a.merge1[!(celltypes.exp4a.merge1 %in% celltype_list_missing)]
     
     # 2. Creation of bulk data with extra proportions
     #I get the real proportions for all celltypes even the one that I don't know. The unknown are at the end.
@@ -78,7 +78,7 @@ drop.exp4.complete <- foreach(j = 1:length(celltypes.exp4.merge1.obj),
                                                        eset.sparse_pseudobulk_VL@assayData$exprs)
     
     # 3. Creation of the semi-reference objects
-    semi_reference_objects.exp4.temp <- create_semi_reference_objects(
+    semi_reference_objects.exp4a.temp <- create_semi_reference_objects(
       extra_unknown_celltypes = length(celltype_list_missing), #this will increased from 1 to 6 (all celltypes)
       cell_type_names = rest_celltypes,
       bulk.data_mixtures.brain = eset.sparse_pseudobulk_VL.plus.fixed,
@@ -91,16 +91,16 @@ drop.exp4.complete <- foreach(j = 1:length(celltypes.exp4.merge1.obj),
     
     #3.1 Reordering the data.
     gene_names_order <- rownames(deco.actual.data.VL.merge1$result_deco_top_cluster$w)
-    semi_reference_objects.exp4.temp$partial_w_fixed <- data.frame(semi_reference_objects.exp4.temp$partial_w_fixed)
-    semi_reference_objects.exp4.temp$partial_w_fixed[gene_names_order, rest_celltypes] <- data.frame(deco.actual.data.VL.merge1$result_deco_top_cluster$w[gene_names_order , rest_celltypes]) 
+    semi_reference_objects.exp4a.temp$partial_w_fixed <- data.frame(semi_reference_objects.exp4a.temp$partial_w_fixed)
+    semi_reference_objects.exp4a.temp$partial_w_fixed[gene_names_order, rest_celltypes] <- data.frame(deco.actual.data.VL.merge1$result_deco_top_cluster$w[gene_names_order , rest_celltypes]) 
     
     # 4. Deconvolution with the partially fixed h and w
-    drop.exp4.complete.temp <- run_deconvolution_decoflex_semi_reference(
-      bulk.data_mixtures.brain = semi_reference_objects.exp4.temp$bulk_data,
-      partial_w_fixed = semi_reference_objects.exp4.temp$partial_w_fixed, 
-      partial_h_fixed = semi_reference_objects.exp4.temp$partial_h_fixed, 
-      mask_w = semi_reference_objects.exp4.temp$mask_w,
-      mask_h = semi_reference_objects.exp4.temp$mask_h,
+    drop.exp4a.complete.temp <- run_deconvolution_decoflex_semi_reference(
+      bulk.data_mixtures.brain = semi_reference_objects.exp4a.temp$bulk_data,
+      partial_w_fixed = semi_reference_objects.exp4a.temp$partial_w_fixed, 
+      partial_h_fixed = semi_reference_objects.exp4a.temp$partial_h_fixed, 
+      mask_w = semi_reference_objects.exp4a.temp$mask_w,
+      mask_h = semi_reference_objects.exp4a.temp$mask_h,
       number_cell_types = length(rest_celltypes), 
       extra_unknown_celltypes = length(celltype_list_missing) ,
       proportion_constraint_h = TRUE,
@@ -109,10 +109,10 @@ drop.exp4.complete <- foreach(j = 1:length(celltypes.exp4.merge1.obj),
     
 
     #Saving the object with the list of results
-    save(drop.exp4.complete.temp, file = paste0(root.dir, celltype_name, "_Dropped_sub.exp4_Estimates.rda"))
+    save(drop.exp4a.complete.temp, file = paste0(root.dir, celltype_name, "_Dropped_sub.exp4a_Estimates.rda"))
     
     list_values_model <- list()
-    list_values_model[[celltype_name]] <- drop.exp4.complete.temp
+    list_values_model[[celltype_name]] <- drop.exp4a.complete.temp
     
     
     assign(celltype_name, list_values_model)
@@ -123,5 +123,5 @@ drop.exp4.complete <- foreach(j = 1:length(celltypes.exp4.merge1.obj),
 stopImplicitCluster()
 
 #Saving everything
-save(drop.exp4.complete, file = paste0(root.dir, "all_Dropped_sub.exp4_Estimates.rda"))
+save(drop.exp4a.complete, file = paste0(root.dir, "all_Dropped_sub.exp4a_Estimates.rda"))
 

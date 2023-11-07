@@ -1,7 +1,7 @@
 
 #parameteres:
 root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/exp_3/"
-iterations_number <- 15000
+iterations_number <- 30000
 core_number <- 8
 
 #importing functions to parallelize

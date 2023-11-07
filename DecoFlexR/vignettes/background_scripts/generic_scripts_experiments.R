@@ -145,11 +145,21 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
   #In case that all extra markers are in the w, then the unknown will be zero
   extra_marker_genes_semireference.unknown <- extra_marker_genes_semireference[!(extra_marker_genes_semireference %in% extra_marker_genes_semireference.known)]
   
-  w_fixed <- w_fixed.value[c(marker_genes, 
+  w_fixed <- w_fixed.value[c(marker_genes,
                              extra_marker_genes_semireference.known,
                              extra_marker_genes_semireference.unknown
   ), ]
   
+  #Fixing problem when w is of 1 column
+  if(ncol(w_fixed.value)){
+    w_fixed <- data.frame(w_fixed)
+    colnames(w_fixed) <- colnames(w_fixed.value)
+    rownames(w_fixed) <- c(marker_genes,
+                           extra_marker_genes_semireference.known,
+                           extra_marker_genes_semireference.unknown
+    )
+  }
+
   
   #3. Now I build the bulk data with the marker genes: first the normal ones and then the additionals.
   bulk.data_mixtures.brain.filtered <- bulk.data_mixtures.brain[c(marker_genes, 
@@ -178,6 +188,9 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
     #nothing
   }
   
+  #Converting to data frame
+  mask_h <- data.frame(mask_h)
+  
   
   #Now let's put the proportions that I needed, filling with zeros the rest
   partial_h_fixed <- matrix(0, nrow = (number_cell_types + extra_unknown_celltypes), ncol =  samples_bulk_data)
@@ -190,7 +203,8 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
                     1:ncol(fixed_h_values)] <- as.matrix(fixed_h_values[c(cell_type_names, paste0('unknown_', 1:extra_unknown_celltypes)), ])
   }
   
-  
+  #Converting to data frame
+  partial_h_fixed <- data.frame(partial_h_fixed)
   
   
   #Now I will create the W
@@ -209,6 +223,11 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
     mask_w[(length(marker_genes)+length(extra_marker_genes_semireference.known)+ 1):nrow(mask_w), 1:(number_cell_types + extra_unknown_celltypes)] <- FALSE
   }
   
+  #Converting to data frame
+  mask_w <- data.frame(mask_w)
+  
+  
+  
   # I have k cell-types rows by m samples.
   partial_w_fixed <- matrix(0, 
                             nrow = (length(marker_genes) + length(extra_marker_genes_semireference)), 
@@ -216,7 +235,13 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
   colnames(partial_w_fixed) <- c(cell_type_names, paste0('unknown_', 1:extra_unknown_celltypes))
   rownames(partial_w_fixed) <- c(marker_genes, extra_marker_genes_semireference.known, extra_marker_genes_semireference.unknown)
   
-  partial_w_fixed[1:nrow(w_fixed), 1:number_cell_types] <- as.matrix(w_fixed)  
+  #we check if the reference is not empty to assign values
+  if(ncol(w_fixed)>0){
+    partial_w_fixed[1:nrow(w_fixed), 1:number_cell_types] <- as.matrix(w_fixed) 
+  }
+ 
+  #Converting to data frame
+  partial_w_fixed <- data.frame(partial_w_fixed)
   
   return(list(mask_h = mask_h, partial_h_fixed = partial_h_fixed,
               mask_w = mask_w, partial_w_fixed = partial_w_fixed, 

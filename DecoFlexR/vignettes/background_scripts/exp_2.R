@@ -1,7 +1,7 @@
 
 #parameteres:
 root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/exp_2/"
-iterations_number <- 15000
+iterations_number <- 30000
 core_number <- 8
 
 #importing functions to parallelize
@@ -127,7 +127,7 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
         marker_genes = rownames(deco.actual.data.VL.merge2$result_deco_top_cluster$w),
         extra_marker_genes_semireference.value = NULL,
         fixed_h_values = pseudo.eset.sc.sparse_VL.all.prop, 
-        version = 'two')
+        version = 'one')
       
       
       #3.1 Reordering the data.
