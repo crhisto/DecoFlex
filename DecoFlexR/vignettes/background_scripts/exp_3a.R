@@ -1,6 +1,9 @@
+#The idea is to give markers and not just 1 line of proportions, but instead a 30% of lines of known compositions to check 
+# if both the accuracy for H and the correlation of W increase, making the hipothesis that with more known proportions as input
+# the accuracy increase.
 
 #parameteres:
-root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/exp_2/"
+root.dir <- "/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/results/exp_3a/"
 iterations_number <- 15000
 core_number <- 8
 
@@ -8,25 +11,29 @@ core_number <- 8
 library(parallel)
 library(doParallel)
 library(DecoFlex)
+library(SCDC) #Crhisto version: https://github.com/crhisto/SCDC
 
-#Loading the needed files: eset.sc.sparse_VL, deco.actual.data.VL.merge1, deco.actual.data.VL.merge2, eset.sparse_pseudobulk_VL
-load(paste0(root.dir, "resources_exp2.rData"))
+#1.1.Loading the needed files: eset.sc.sparse_VL, deco.actual.data.VL.merge1, deco.actual.data.VL.merge2, eset.sparse_pseudobulk_VL
+load(paste0(root.dir, "resources_exp3.rData"))
 
-# 1. I need to create the bulk data with the additional information
+#1.2.Definition of celltype names
+celltypes.exp3a.merge_1_2 <- c("OPCs", "Endothelial", "Neurons", "Oligodendrocytes", "Astrocytes", "Microglia", 'Neurons_Exc', 'Neurons_Inh')
+celltypes.exp3a.merge1 <- c("OPCs", "Endothelial", "Neurons", "Oligodendrocytes", "Astrocytes", "Microglia")
+celltypes.exp3a.merge2 <- c("OPCs", "Endothelial", "Oligodendrocytes", "Astrocytes", "Microglia", 'Neurons_Exc', 'Neurons_Inh')
+
+# 1.3 I need to create the bulk data with the additional information
 #creation of pseudo bulk data with the same information for merge1 and merge2
 pseudo.eset.sc.sparse_VL.all.merge1 <- generateBulk_allcells(eset.sc.sparse_VL, ct.varname = "merge1", sample = "Disorder", ct.sub = NULL)
 pseudo.eset.sc.sparse_VL.all.merge2 <- generateBulk_allcells(eset.sc.sparse_VL, ct.varname = "merge2", sample = "Disorder", ct.sub = NULL)
 
+#1.4. Creation of bulk data with 30% of mixture input to feed the model proportions
+pseudo.eset.sc.sparse_VL.30.merge1 <- SCDC::generateBulk_norep(eset.sc.sparse_VL, ct.varname = "merge1", sample = "Disorder", ct.sub = celltypes.exp3a.merge1, nbulk = 30)
+pseudo.eset.sc.sparse_VL.30.merge2 <- SCDC::generateBulk_norep(eset.sc.sparse_VL, ct.varname = "merge2", sample = "Disorder", ct.sub = celltypes.exp3a.merge2, nbulk = 30)
 
 #2. Including generics functions.
 source("/mnt_volumen/GIT_REPOSITORIES/DecoFlex/DecoFlexR/vignettes/background_scripts/generic_scripts_experiments.R")
 
-drop.exp2.complete <- drop.sub.exp2.complete <- list()
-
-celltypes.exp2.merge_1_2 <- c("OPCs", "Endothelial", "Neurons", "Oligodendrocytes", "Astrocytes", "Microglia", 'Neurons_Exc', 'Neurons_Inh')
-
-celltypes.exp2.merge1 <- c("OPCs", "Endothelial", "Neurons", "Oligodendrocytes", "Astrocytes", "Microglia")
-celltypes.exp2.merge2 <- c("OPCs", "Endothelial", "Oligodendrocytes", "Astrocytes", "Microglia", 'Neurons_Exc', 'Neurons_Inh')
+drop.exp3a.complete <- drop.sub.exp3a.complete <- list()
 
 print('Executing parallelized function...')
 
@@ -41,24 +48,24 @@ print(paste0('Number of cores to use: ', no_cores))
 
 registerDoParallel(no_cores)
 
-drop.exp2.complete <- NULL
+drop.exp3a.complete <- NULL
 
 # For each cell-type dropped in the merge1 group, I will run the deconvolution
 # Definition of the parallel function
-drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
+drop.exp3a.complete <- foreach(j = 1:length(celltypes.exp3a.merge_1_2),
                    .combine = c)  %dopar%
   {
     
-    celltype_name <- celltypes.exp2.merge_1_2[j]
+    celltype_name <- celltypes.exp3a.merge_1_2[j]
 
-    drop.exp2.complete.temp <- NULL
+    drop.exp3a.complete.temp <- NULL
     
-    if(celltype_name %in% celltypes.exp2.merge1){
+    if(celltype_name %in% celltypes.exp3a.merge1){
       
       print(paste0('Running Decoflex deleting merge1: ', celltype_name))
       
       # 1. Filtering the deleted celltype
-      rest_celltypes <- celltypes.exp2.merge1[!celltypes.exp2.merge1 == celltype_name]
+      rest_celltypes <- celltypes.exp3a.merge1[!celltypes.exp3a.merge1 == celltype_name]
       
       
       # 2. Creation of bulk data with extra proportions
@@ -66,33 +73,38 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
       pseudo.eset.sc.sparse_VL.all.prop <- data.frame(Control=pseudo.eset.sc.sparse_VL.all.merge1$truep[c(rest_celltypes, celltype_name)])
       rownames(pseudo.eset.sc.sparse_VL.all.prop)[which(rownames(pseudo.eset.sc.sparse_VL.all.prop) == celltype_name)] <- 'unknown_1'
       
-      #2.1 Fixing proportions
+      # 2.1 Adding more true proportions (30%) more.
+      pseudo.eset.sc.sparse_VL.all.prop <- cbind(pseudo.eset.sc.sparse_VL.all.prop, t(pseudo.eset.sc.sparse_VL.30.merge1$true_p)[c(rest_celltypes, celltype_name),])
+      
+      # 2.2 Fixing proportions: 31 control and adding the 100 mixtures.
       eset.sparse_pseudobulk_VL.plus.fixed <- data.frame(round((pseudo.eset.sc.sparse_VL.all.merge1$pseudo_eset@assayData$exprs)/100),
+                                                         round((pseudo.eset.sc.sparse_VL.30.merge1$pseudo_eset@assayData$exprs)/100),
                                                          eset.sparse_pseudobulk_VL@assayData$exprs)
       
       # 3. Creation of the semi-reference objects
-      semi_reference_objects.exp2.temp <- create_semi_reference_objects(
+      semi_reference_objects.exp3a.temp <- create_semi_reference_objects(
         extra_unknown_celltypes = 1,
         cell_type_names = rest_celltypes,
         bulk.data_mixtures.brain = eset.sparse_pseudobulk_VL.plus.fixed,
         w_fixed.value = data.frame(deco.actual.data.VL.merge1$result_deco_top_cluster$w[, rest_celltypes]), 
         marker_genes = rownames(deco.actual.data.VL.merge1$result_deco_top_cluster$w),
         extra_marker_genes_semireference.value = NULL,
-        version = 'one')
+        fixed_h_values = pseudo.eset.sc.sparse_VL.all.prop, 
+        version = 'two')
       
       
       #3.1 Reordering the data.
       gene_names_order <- rownames(deco.actual.data.VL.merge1$result_deco_top_cluster$w)
-      semi_reference_objects.exp2.temp$partial_w_fixed <- data.frame(semi_reference_objects.exp2.temp$partial_w_fixed)
-      semi_reference_objects.exp2.temp$partial_w_fixed[gene_names_order, rest_celltypes] <- data.frame(deco.actual.data.VL.merge1$result_deco_top_cluster$w[gene_names_order , rest_celltypes]) 
+      semi_reference_objects.exp3a.temp$partial_w_fixed <- data.frame(semi_reference_objects.exp3a.temp$partial_w_fixed)
+      semi_reference_objects.exp3a.temp$partial_w_fixed[gene_names_order, rest_celltypes] <- data.frame(deco.actual.data.VL.merge1$result_deco_top_cluster$w[gene_names_order , rest_celltypes]) 
 
       # 4. Deconvolution with the partially fixed h and w
-      drop.exp2.complete.temp <- run_deconvolution_decoflex_semi_reference(
-        bulk.data_mixtures.brain = semi_reference_objects.exp2.temp$bulk_data,
-        partial_w_fixed = semi_reference_objects.exp2.temp$partial_w_fixed, 
-        partial_h_fixed = semi_reference_objects.exp2.temp$partial_h_fixed, 
-        mask_w = semi_reference_objects.exp2.temp$mask_w,
-        mask_h = semi_reference_objects.exp2.temp$mask_h,
+      drop.exp3a.complete.temp <- run_deconvolution_decoflex_semi_reference(
+        bulk.data_mixtures.brain = semi_reference_objects.exp3a.temp$bulk_data,
+        partial_w_fixed = semi_reference_objects.exp3a.temp$partial_w_fixed, 
+        partial_h_fixed = semi_reference_objects.exp3a.temp$partial_h_fixed, 
+        mask_w = semi_reference_objects.exp3a.temp$mask_w,
+        mask_h = semi_reference_objects.exp3a.temp$mask_h,
         scale_w_unfixed_col = TRUE,
         number_cell_types = length(rest_celltypes), 
         extra_unknown_celltypes = 1 ,
@@ -106,7 +118,7 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
       print(paste0('Running Decoflex deleting merge2: ', celltype_name))
       
       # 1. Filtering the deleted celltype
-      rest_celltypes <- celltypes.exp2.merge2[!celltypes.exp2.merge2 == celltype_name]
+      rest_celltypes <- celltypes.exp3a.merge2[!celltypes.exp3a.merge2 == celltype_name]
       
       
       # 2. Creation of bulk data with extra proportions
@@ -114,13 +126,17 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
       pseudo.eset.sc.sparse_VL.all.prop <- data.frame(Control=pseudo.eset.sc.sparse_VL.all.merge2$truep[c(rest_celltypes, celltype_name)])
       rownames(pseudo.eset.sc.sparse_VL.all.prop)[which(rownames(pseudo.eset.sc.sparse_VL.all.prop) == celltype_name)] <- 'unknown_1'
       
-      #2.1 Fixing proportions
+      # 2.1 Adding more true proportions (30%) more.
+      pseudo.eset.sc.sparse_VL.all.prop <- cbind(pseudo.eset.sc.sparse_VL.all.prop, t(pseudo.eset.sc.sparse_VL.30.merge2$true_p)[c(rest_celltypes, celltype_name),])
+      
+      # 2.2 Fixing proportions: 31 control and adding the 100 mixtures.
       eset.sparse_pseudobulk_VL.plus.fixed <- data.frame(round((pseudo.eset.sc.sparse_VL.all.merge2$pseudo_eset@assayData$exprs)/100),
+                                                         round((pseudo.eset.sc.sparse_VL.30.merge2$pseudo_eset@assayData$exprs)/100),
                                                          eset.sparse_pseudobulk_VL@assayData$exprs)
       
       
       # 3. Creation of the semi-reference objects
-      semi_reference_objects.exp2.temp <- create_semi_reference_objects(
+      semi_reference_objects.exp3a.temp <- create_semi_reference_objects(
         extra_unknown_celltypes = 1,
         cell_type_names = rest_celltypes,
         bulk.data_mixtures.brain = eset.sparse_pseudobulk_VL.plus.fixed,
@@ -128,22 +144,22 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
         marker_genes = rownames(deco.actual.data.VL.merge2$result_deco_top_cluster$w),
         extra_marker_genes_semireference.value = NULL,
         fixed_h_values = pseudo.eset.sc.sparse_VL.all.prop, 
-        version = 'one')
+        version = 'two')
       
       
       #3.1 Reordering the data.
       gene_names_order <- rownames(deco.actual.data.VL.merge2$result_deco_top_cluster$w)
-      semi_reference_objects.exp2.temp$partial_w_fixed <- data.frame(semi_reference_objects.exp2.temp$partial_w_fixed)
-      semi_reference_objects.exp2.temp$partial_w_fixed[gene_names_order, rest_celltypes] <- data.frame(deco.actual.data.VL.merge2$result_deco_top_cluster$w[gene_names_order , rest_celltypes]) 
+      semi_reference_objects.exp3a.temp$partial_w_fixed <- data.frame(semi_reference_objects.exp3a.temp$partial_w_fixed)
+      semi_reference_objects.exp3a.temp$partial_w_fixed[gene_names_order, rest_celltypes] <- data.frame(deco.actual.data.VL.merge2$result_deco_top_cluster$w[gene_names_order , rest_celltypes]) 
       
 
       # 4. Deconvolution with the partially fixed h and w
-      drop.exp2.complete.temp <- run_deconvolution_decoflex_semi_reference(
-        bulk.data_mixtures.brain = semi_reference_objects.exp2.temp$bulk_data,
-        partial_w_fixed = semi_reference_objects.exp2.temp$partial_w_fixed, 
-        partial_h_fixed = semi_reference_objects.exp2.temp$partial_h_fixed, 
-        mask_w = semi_reference_objects.exp2.temp$mask_w,
-        mask_h = semi_reference_objects.exp2.temp$mask_h,
+      drop.exp3a.complete.temp <- run_deconvolution_decoflex_semi_reference(
+        bulk.data_mixtures.brain = semi_reference_objects.exp3a.temp$bulk_data,
+        partial_w_fixed = semi_reference_objects.exp3a.temp$partial_w_fixed, 
+        partial_h_fixed = semi_reference_objects.exp3a.temp$partial_h_fixed, 
+        mask_w = semi_reference_objects.exp3a.temp$mask_w,
+        mask_h = semi_reference_objects.exp3a.temp$mask_h,
         scale_w_unfixed_col = TRUE,
         number_cell_types = length(rest_celltypes), 
         extra_unknown_celltypes = 1 ,
@@ -154,10 +170,10 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
     }
     
     #Saving the object with the list of results
-    save(drop.exp2.complete.temp, file = paste0(root.dir, celltype_name, "_Dropped_sub.exp2_Estimates.rda"))
+    save(drop.exp3a.complete.temp, file = paste0(root.dir, celltype_name, "_Dropped_sub.exp3a_Estimates.rda"))
     
     list_values_model <- list()
-    list_values_model[[celltype_name]] <- drop.exp2.complete.temp
+    list_values_model[[celltype_name]] <- drop.exp3a.complete.temp
     
     
     assign(celltype_name, list_values_model)
@@ -168,5 +184,5 @@ drop.exp2.complete <- foreach(j = 1:length(celltypes.exp2.merge_1_2),
 stopImplicitCluster()
 
 #Saving everything
-save(drop.exp2.complete, file = paste0(root.dir, "all_Dropped_sub.exp2_Estimates.rda"))
+save(drop.exp3a.complete, file = paste0(root.dir, "all_Dropped_sub.exp3a_Estimates.rda"))
 
