@@ -251,7 +251,7 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
 
 run_deconvolution_decoflex_semi_reference <- function(bulk.data_mixtures.brain, 
                                                       partial_w_fixed, partial_h_fixed, 
-                                                      mask_w, mask_h,
+                                                      mask_w, mask_h, scale_w_unfixed_col = TRUE,
                                                       number_cell_types, extra_unknown_celltypes,
                                                       proportion_constraint_h = TRUE, max_iterations = 1000, delta_threshold = 1e-15){
   
@@ -275,6 +275,7 @@ run_deconvolution_decoflex_semi_reference <- function(bulk.data_mixtures.brain,
     partial_h_fixed=data.frame(partial_h_fixed),
     w_mask_fixed=data.frame(mask_w),
     h_mask_fixed=data.frame(mask_h),
+    scale_w_unfixed_col=scale_w_unfixed_col,
     batches_partial_fixed=1)
   
   end_time <- Sys.time()
