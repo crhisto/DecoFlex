@@ -458,6 +458,7 @@ run_deconvolution_tree_guided_recursive <- function(
     markers.clusters.parameter = NULL,
     use_global_makers = FALSE,
     global_markers_object = NULL,
+    reference_type = 'basis.mvw',
     verbose = FALSE){
 
   message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
@@ -541,7 +542,7 @@ run_deconvolution_tree_guided_recursive <- function(
 
   # First I have to calculate the globla markers
   if(hierarchy$tree_level == "0"){
-    
+
     message('Calculating global markers...')
     # 1. Create the reference for the top clustering configuration
     reference_w.global.cluster <- decoflex_build_cell_reference(
@@ -549,8 +550,9 @@ run_deconvolution_tree_guided_recursive <- function(
       ct.sub = hierarchy$celltype_list,
       ct.varname = sub_clusters_var,
       sample = sample,
+      reference_type = reference_type,
       verbose = verbose)
-    
+
     # 2. Calculate the global marker genes
     markers.global.clusters.object <- calculate_markers(
       single_cell_data_exp = single_cell_data_exp,
@@ -571,21 +573,22 @@ run_deconvolution_tree_guided_recursive <- function(
       use_global_makers = FALSE,
       global_markers_object = NULL,
       verbose = verbose)
-    
+
     global_markers_object <- markers.global.clusters.object$list_markers
   }else{
     message('Keeping the global_markers_object from the parameter.')
   }
 
-  
+
   # 1. Create the reference for the top clustering configuration
   reference_w.top.cluster <- decoflex_build_cell_reference(
     x = single_cell_data_exp,
     ct.sub = top_clusters_list,
     ct.varname = top_clusters_var,
     sample = sample,
+    reference_type = reference_type,
     verbose = verbose)
-  
+
   # 2. Calculate the Marker genes for the top clusters
   # In this case, I can pass the object as parameter
   markers.top.clusters.object <- NULL
@@ -697,6 +700,7 @@ run_deconvolution_tree_guided_recursive <- function(
       percentile_markers = percentile_markers,
       min_delta_cor_threshold = min_delta_cor_threshold.use,
       percentile_markers.min_corr = percentile_markers.min_corr,
+      reference_type = reference_type,
       verbose = verbose)
   }
 
@@ -950,6 +954,7 @@ run_marker_selection_OMiC <- function(
     percentile_markers = NULL,
     min_delta_cor_threshold = 0.05,
     percentile_markers.min_corr = NULL,
+    reference_type = 'basis.mvw',
     verbose = FALSE){
 
   message(paste0('run_deconvolution_tree_guided_recursive - Verbose: ',
@@ -1031,6 +1036,7 @@ run_marker_selection_OMiC <- function(
     ct.sub = top_clusters_list,
     ct.varname = top_clusters_var,
     sample = sample,
+    reference_type = reference_type,
     verbose = verbose)
 
   # 2. Calculate the Marker genes for the top clusters
@@ -1166,6 +1172,7 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
                                           percentile_markers.min_corr = NULL,
                                           max_iterations = 10000,
                                           delta_threshold = 1e-10,
+                                          reference_type = 'basis.mvw',
                                           verbose = FALSE){
 
   if(verbose){
@@ -1178,6 +1185,7 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
     ct.sub = top_clusters_list,
     ct.varname = top_clusters_var,
     sample = sample,
+    reference_type = reference_type,
     verbose = verbose)
 
   # 3. Calculate the Marker genes for the top clusters
@@ -1257,6 +1265,7 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
       param.logfc.threshold = param.logfc.threshold,
       param.p_val_adj = param.p_val_adj,
       marker_strategy = marker_strategy,
+      reference_type = reference_type,
       verbose = verbose)
   }
 
@@ -1277,6 +1286,7 @@ run_deconvolution_tree_guided <- function(bulk_data, single_cell_data_exp,
       ct.sub = subclusters_list,
       ct.varname = sub_clusters_var,
       sample = sample,
+      reference_type = reference_type,
       verbose = verbose)
 
     # 5.3. Calculate the marker genes for the separated deconvolution
@@ -1421,6 +1431,7 @@ calculate_markers_level_intersection <- function(single_cell_data_exp,
                                                  percentile_markers = NULL,
                                                  min_delta_cor_threshold = 0.05,
                                                  percentile_markers.min_corr = NULL,
+                                                 reference_type = 'basis.mvw',
                                                  verbose = FALSE){
   # 1. For each top cluster create the deconvolution for the subclusters
   # inside.
@@ -1448,6 +1459,7 @@ calculate_markers_level_intersection <- function(single_cell_data_exp,
         ct.sub = subclusters_list,
         ct.varname = sub_clusters_var,
         sample = sample,
+        reference_type = reference_type,
         verbose = verbose)
 
       # 1.3. Calculate the marker genes for the separated deconvolution not
@@ -2025,8 +2037,8 @@ calculate_markers <- function(single_cell_data_exp,
 
   # 6. Check with min_cor strategy.
   if(use_min_cor_strategy){
-    
-    # I will send the always the complete model, but the rest will be based on 
+
+    # I will send the always the complete model, but the rest will be based on
     # the celltypes of the level.
     list_markers.param <- NULL
     #If we mark the use_global_makers parameter, I will use the previous markers
@@ -2036,7 +2048,7 @@ calculate_markers <- function(single_cell_data_exp,
     message(paste0(use_global_makers, ' -- ',
                    paste(shQuote(list_groups), collapse=", "), ' -- ',
                    paste(shQuote(names(global_markers_object)), collapse=", "), ' -- '))
-    if(use_global_makers && 
+    if(use_global_makers &&
        !is.null(global_markers_object) &&
        (list_groups %in% names(global_markers_object))){
       #For the min correlation analysis for the specific celltypes
@@ -2051,7 +2063,7 @@ calculate_markers <- function(single_cell_data_exp,
                      paste(shQuote(names(global_markers_object)), collapse=", "), ' -- '))
       list_markers.param <- list_markers
     }
-    
+
     results.min.corr <- calculate_min_correlation_incremental_markers(
       list_markers = list_markers.param,
       reference = reference,

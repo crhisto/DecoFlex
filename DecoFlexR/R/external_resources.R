@@ -243,8 +243,10 @@ create_basis_one <- function(x , ct.sub = NULL, ct.varname, sample,
   # select only the subset of cell types of interest
   if (is.null(ct.sub)){
     ct.sub <- unique(x@phenoData@data[,ct.varname])[!is.na(unique(x@phenoData@data[,ct.varname]))]
-  }else{}
-  ct.sub <- ct.sub[!is.na(ct.sub)]
+  }else{
+    ct.sub <- ct.sub[!is.na(ct.sub)]
+  }
+
 
   x.sub <- x[,x@phenoData@data[,ct.varname] %in% ct.sub]
   # qc: remove non-zero genes
@@ -351,7 +353,7 @@ create_basis_one <- function(x , ct.sub = NULL, ct.varname, sample,
   })
 
   # reorder columns
-  basis.mvw <- basis.mvw[,levels(ct.sub)[ct.sub]]
+  basis.mvw <- basis.mvw[,ct.sub]
 
   # In the one subject case, no variance is calculated.
   sigma <- NULL
@@ -403,6 +405,7 @@ create_basis_one <- function(x , ct.sub = NULL, ct.varname, sample,
 #' @export
 decoflex_build_cell_reference <- function(x, ct.sub = NULL, ct.varname,
                                           sample, ct.cell.size = NULL,
+                                          reference_type = 'basis.mvw',
                                           verbose = FALSE){
 
   if(verbose){
@@ -410,6 +413,7 @@ decoflex_build_cell_reference <- function(x, ct.sub = NULL, ct.varname,
     print(paste0('ct.sub: ', ct.sub))
     print(paste0('ct.varname: ', ct.varname))
     print(paste0('sample: ', sample))
+    print(paste0('reference_type: ', reference_type))
   }
 
   if(verbose){
@@ -476,7 +480,7 @@ decoflex_build_cell_reference <- function(x, ct.sub = NULL, ct.varname,
                                              ct.cell.size = ct.cell.size,
                                              verbose = verbose)
     # In this case I have to use the basis matrix
-    reference <- result_reference$basis
+    reference <- result_reference[[type]]
   }else{
 
     if(verbose){
@@ -492,7 +496,7 @@ decoflex_build_cell_reference <- function(x, ct.sub = NULL, ct.varname,
 
     # In this case I have to use the basis.mvw that takes in account the
     # different samples
-    reference <- result_reference$basis.mvw
+    reference <- result_reference[[type]]
   }
 
   # Return of the matrix with the reference of celltypes
