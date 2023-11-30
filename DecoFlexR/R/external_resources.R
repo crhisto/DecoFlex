@@ -480,7 +480,7 @@ decoflex_build_cell_reference <- function(x, ct.sub = NULL, ct.varname,
                                              ct.cell.size = ct.cell.size,
                                              verbose = verbose)
     # In this case I have to use the basis matrix
-    reference <- result_reference[[type]]
+    reference <- result_reference[[reference_type]]
   }else{
 
     if(verbose){
@@ -496,7 +496,7 @@ decoflex_build_cell_reference <- function(x, ct.sub = NULL, ct.varname,
 
     # In this case I have to use the basis.mvw that takes in account the
     # different samples
-    reference <- result_reference[[type]]
+    reference <- result_reference[[reference_type]]
   }
 
   # Return of the matrix with the reference of celltypes
