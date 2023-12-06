@@ -45,7 +45,7 @@ delete_celltype_hierarchy <- function(hierarchy, celltype_name_delete){
   current_hierarchy <- hierarchy
   
   #replace celltype name in the current level of the hierarchy
-  current_hierarchy$celltype_list <- current_hierarchy$celltype_list[!current_hierarchy$celltype_list == celltype_name_delete]
+  current_hierarchy$celltype_list <- current_hierarchy$celltype_list[!current_hierarchy$celltype_list %in% celltype_name_delete]
   
   if(!is.null(current_hierarchy$next_level_clustering)){
     
@@ -229,19 +229,22 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
   
   
   # I have k cell-types rows by m samples.
-  partial_w_fixed <- matrix(0, 
+  partial_w_fixed <- matrix(0.0, 
                             nrow = (length(marker_genes) + length(extra_marker_genes_semireference)), 
                             ncol = (number_cell_types + extra_unknown_celltypes))
   colnames(partial_w_fixed) <- c(cell_type_names, paste0('unknown_', 1:extra_unknown_celltypes))
   rownames(partial_w_fixed) <- c(marker_genes, extra_marker_genes_semireference.known, extra_marker_genes_semireference.unknown)
   
-  #we check if the reference is not empty to assign values
+  # We check if the reference is not empty to assign values
   if(ncol(w_fixed)>0){
     partial_w_fixed[1:nrow(w_fixed), 1:number_cell_types] <- as.matrix(w_fixed) 
   }
  
   #Converting to data frame
   partial_w_fixed <- data.frame(partial_w_fixed)
+  
+  # Replace NAs with 0s
+  partial_w_fixed[is.na(partial_w_fixed)] <- 0
   
   return(list(mask_h = mask_h, partial_h_fixed = partial_h_fixed,
               mask_w = mask_w, partial_w_fixed = partial_w_fixed, 
@@ -250,9 +253,10 @@ create_semi_reference_objects <- function(extra_unknown_celltypes = 1, cell_type
 
 
 run_deconvolution_decoflex_semi_reference <- function(bulk.data_mixtures.brain, 
-                                                      partial_w_fixed, partial_h_fixed, 
-                                                      mask_w, mask_h, scale_w_unfixed_col = TRUE,
-                                                      number_cell_types, extra_unknown_celltypes,
+                                                      fixed_w = NULL,
+                                                      partial_w_fixed = NULL, partial_h_fixed = NULL, 
+                                                      mask_w = NULL, mask_h = NULL, scale_w_unfixed_col = NULL,
+                                                      number_cell_types, extra_unknown_celltypes = 0,
                                                       proportion_constraint_h = TRUE, max_iterations = 1000, delta_threshold = 1e-15){
   
   total_celltypes <- (number_cell_types + extra_unknown_celltypes)
@@ -271,10 +275,11 @@ run_deconvolution_decoflex_semi_reference <- function(bulk.data_mixtures.brain,
     max_iterations = max_iterations, 
     delta_threshold = delta_threshold, 
     proportion_constraint_h = proportion_constraint_h,
-    partial_w_fixed=data.frame(partial_w_fixed),
-    partial_h_fixed=data.frame(partial_h_fixed),
-    w_mask_fixed=data.frame(mask_w),
-    h_mask_fixed=data.frame(mask_h),
+    fixed_w = if(!is.null(fixed_w)) data.frame(fixed_w) else NULL,
+    partial_w_fixed=if(!is.null(partial_w_fixed)) data.frame(partial_w_fixed) else NULL,
+    partial_h_fixed=if(!is.null(partial_h_fixed)) data.frame(partial_h_fixed) else NULL,
+    w_mask_fixed=if(!is.null(mask_w)) data.frame(mask_w) else NULL,
+    h_mask_fixed=if(!is.null(mask_h)) data.frame(mask_h) else NULL,
     scale_w_unfixed_col=scale_w_unfixed_col,
     batches_partial_fixed=1)
   
