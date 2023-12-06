@@ -107,7 +107,7 @@ environment_creation <- function(){
 #'  in the deconvolution. By default, this is set to NULL.
 #' @param max_iterations A positive integer. Represents the maximum number of
 #'  iterations for the deconvolution process. By default, this is set to 10000.
-#' @param delta_threshold The convergence threshold for stopping the 
+#' @param delta_threshold The convergence threshold for stopping the
 #'  deconvolution iterations.
 #' @param verbose A boolean. If TRUE, the function will print additional details
 #'  during the execution. By default, this is set to FALSE.
@@ -123,7 +123,7 @@ run_standard_deconvolution <- function(bulk_data_x,
                                        references_w,
                                        markers = NULL,
                                        max_iterations = 10000,
-                                       delta_threshold = 1e-10, 
+                                       delta_threshold = 1e-10,
                                        verbose = FALSE){
 
   # 1. Calculation of the k equal to the number of cell references in the
@@ -297,7 +297,7 @@ run_complete_deconvolution <- function(x_matrix,
                                        partial_h_fixed=NULL,
                                        w_mask_fixed=NULL,
                                        h_mask_fixed=NULL,
-                                       scale_w_unfixed_col=TRUE,
+                                       scale_w_unfixed_col='partial',
                                        batches_partial_fixed=1,
                                        constraint_type_w=NULL,
                                        constraint_value_w=NULL,
@@ -341,7 +341,7 @@ run_complete_deconvolution <- function(x_matrix,
     partial_h_fixed = partial_h_fixed,
     w_mask_fixed = w_mask_fixed,
     h_mask_fixed = h_mask_fixed,
-    scale_w_unfixed_col = as.logical(scale_w_unfixed_col),
+    scale_w_unfixed_col = scale_w_unfixed_col,
     batches_partial_fixed = as.integer(batches_partial_fixed),
     constraint_type_w=constraint_type_w,
     constraint_value_w=constraint_value_w,
