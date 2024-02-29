@@ -43,7 +43,7 @@ Before installing the `DecoFlex` package, there are several steps required to pr
 
 3. In the latest version of RStudio (>2021) configure your environment to have the python path correctly. If you're using RStudio, navigate to: `RStudio > Tools > Global Options > Python > Select [Conda Environments]` and choose the conda environment that you just created named `r_DecoFlex`.
 
-4. To proceed, you need to install the Python library [NMMFlex](www.github.com/crhisto/NMMFlex). You have the option to clone the GitHub repository directly. After doing so, in the subsequent step, replace the term `github_repository` with the actual path of your cloned repository.
+4. To proceed, you need to install the Python library [NMMFlex](https://github.com/crhisto/NMMFlex). You have the option to clone the GitHub repository directly. After doing so, in the subsequent step, replace the term `github_repository` with the actual path of your cloned repository.
 
 5. Check the conda directory usually `/home/[user_name]/miniconda3/bin/conda`: 
 
@@ -461,7 +461,7 @@ In all cases it doesn't generate vignettes or manual
 
 ## Citing our Work
 If this NMMF implementation proves valuable for your research or projects, we kindly ask you to cite our work in your publications, as per the following:
-- Cardona, C., & Schweikert, G. et al (2023). DecoFlex: a flexible joined cell-type decomposition with multiomic epigenetic data. bioRxiv. https://doi.org/10.1101/xxxxxx
+- Cardona, C., & Schweikert, G. et al (2024). DecoFlex: a flexible joined cell-type decomposition with multiomic epigenetic data. (Manuscript in the process of review for submission and forthcoming publication).
 
 ## Contributing
 We warmly welcome contributions to the development of our NMMF algorithm implementation. If you discover any issues, have recommendations for enhancements, or wish to contribute new features, please feel free to open an issue or submit a pull request.
