@@ -148,7 +148,7 @@ usethis::use_pkgdown()
 pkgdown::build_site()
 ```
 
-Upon completion, a full version of the documentation, inclusive of detailed information about every R module and function, will be compiled. This makes for a valuable resource to get to know the package and its functionalities. You can find this detailed documentation at the following [link](https://github.com/crhisto/DecoFlex/blob/main/DecoFlexR/docs/index.html).
+Upon completion, a full version of the documentation, inclusive of detailed information about every R module and function, will be compiled. This makes for a valuable resource to get to know the package and its functionalities. You can find this detailed documentation at the following [link](https://html-preview.github.io/?url=https://github.com/crhisto/DecoFlex/blob/main/DecoFlexR/docs/index.html).
 
 ### Manual Documentation
 
